@@ -10,18 +10,22 @@ const RegistrationForm: React.FC = () => {
     category: 'Delegate'
   });
   const [status, setStatus] = useState({ message: '', type: '' });
+  const [badgeUrl, setBadgeUrl] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus({ message: 'Processing your registration...', type: 'info' });
+    setBadgeUrl(null);
     try {
       const response = await fetch('http://localhost:5001/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
+      const data = await response.json();
       if (response.ok) {
         setStatus({ message: 'Registration Successful! Your badge has been sent to your email.', type: 'success' });
+        setBadgeUrl(data.badgeUrl);
         setFormData({ fullName: '', designation: '', company: '', email: '', phone: '', category: 'Delegate' });
       } else {
         setStatus({ message: 'Error occurred. Please check your details and try again.', type: 'error' });
@@ -125,6 +129,27 @@ const RegistrationForm: React.FC = () => {
             'bg-blue-50 text-blue-700 border border-blue-100'
           }`}>
             {status.message}
+          </div>
+        )}
+
+        {badgeUrl && (
+          <div className="mt-8 border-t border-gray-100 pt-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <h3 className="text-lg font-bold text-gray-900 mb-4 text-center">Your Event Badge</h3>
+            <div className="bg-gray-100 rounded-2xl p-4 mb-4 flex items-center justify-center overflow-hidden border border-gray-200 shadow-inner">
+               <iframe src={badgeUrl} className="w-full h-64 rounded-lg bg-white" title="Badge Preview"></iframe>
+            </div>
+            <a 
+              href={badgeUrl} 
+              download 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 w-full py-4 bg-secondary hover:bg-emerald-600 text-white font-bold rounded-2xl transition-all shadow-lg shadow-emerald-500/20"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Download PDF Badge
+            </a>
           </div>
         )}
       </div>
