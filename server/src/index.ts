@@ -19,9 +19,6 @@ const PORT = process.env.PORT || 5001;
 app.use(cors());
 app.use(express.json());
 
-// Setup Multer for file uploads
-const upload = multer({ dest: 'uploads/temp/' });
-
 // Ensure directories exist
 const uploadsDir = path.join(__dirname, '../uploads');
 const qrcodesDir = path.join(uploadsDir, 'qrcodes');
@@ -31,6 +28,12 @@ const tempDir = path.join(uploadsDir, 'temp');
     fs.mkdirSync(dir, { recursive: true });
   }
 });
+
+// Serve static files from uploads directory
+app.use('/uploads', express.static(uploadsDir));
+
+// Setup Multer for file uploads
+const upload = multer({ dest: 'uploads/temp/' });
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
@@ -80,7 +83,8 @@ app.post('/api/register', async (req, res) => {
     res.status(201).json({ 
       message: 'Registration successful', 
       attendeeId,
-      category 
+      category,
+      badgeUrl: `http://localhost:${PORT}/uploads/badges/${path.basename(badgePath)}`
     });
   } catch (error: any) {
     console.error(error);
@@ -170,6 +174,24 @@ app.post('/api/import-csv', upload.single('file'), async (req, res) => {
       fs.unlinkSync(req.file!.path); // Clean up temp file
       res.json({ message: 'Import completed', successCount, errorCount });
     });
+});
+
+// Stats endpoint for Dashboard
+app.get('/api/stats', async (req, res) => {
+  try {
+    const db = await initDb();
+    const stats = await db.all(`
+      SELECT 
+        category, 
+        COUNT(*) as total,
+        SUM(CASE WHEN checkedIn = 1 THEN 1 ELSE 0 END) as checkedIn
+      FROM attendees 
+      GROUP BY category
+    `);
+    res.json(stats);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.listen(PORT, async () => {
