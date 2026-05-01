@@ -28,7 +28,7 @@ const RegistrationForm: React.FC = () => {
         setBadgeUrl(data.badgeUrl);
         setFormData({ fullName: '', designation: '', company: '', email: '', phone: '', category: 'Delegate' });
       } else {
-        setStatus({ message: 'Error occurred. Please check your details and try again.', type: 'error' });
+        setStatus({ message: data.error || 'Error occurred. Please check your details and try again.', type: 'error' });
       }
     } catch (err) {
       setStatus({ message: 'Could not connect to the registration server.', type: 'error' });

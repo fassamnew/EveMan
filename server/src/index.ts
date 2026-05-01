@@ -88,7 +88,10 @@ app.post('/api/register', async (req, res) => {
     });
   } catch (error: any) {
     console.error(error);
-    res.status(500).json({ error: error.message });
+    if (error.code === 'SQLITE_CONSTRAINT') {
+      return res.status(400).json({ error: 'This email is already registered.' });
+    }
+    res.status(500).json({ error: 'An unexpected error occurred. Please try again later.' });
   }
 });
 
