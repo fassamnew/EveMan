@@ -7,6 +7,17 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum RoleName {
+  SUPER_ADMIN
+  ORG_ADMIN
+  ORG_STAFF
+}
+
+enum AuditOutcome {
+  SUCCESS
+  FAILURE
+}
+
 model MigrationMetadata {
   id        String   @id @default(uuid())
   key       String   @unique
@@ -15,4 +26,125 @@ model MigrationMetadata {
   updatedAt DateTime @updatedAt
 
   @@map("migration_metadata")
+}
+
+model Organization {
+  id         String      @id @default(uuid())
+  code       String      @unique
+  name       String
+  isActive   Boolean     @default(true)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  userRoles  UserRole[]
+  invites    Invite[]
+  tokens     RefreshToken[]
+  auditLogs  AuditLog[]
+
+  @@map("organizations")
+}
+
+model User {
+  id                String         @id @default(uuid())
+  email             String         @unique
+  passwordHash      String?
+  firstName         String?
+  lastName          String?
+  isActive          Boolean        @default(true)
+  failedLoginCount  Int            @default(0)
+  lockedUntil       DateTime?
+  lastLoginAt       DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  userRoles         UserRole[]
+  refreshTokens     RefreshToken[]
+  invitesCreated    Invite[]       @relation("InviteCreatedBy")
+  auditLogs         AuditLog[]     @relation("AuditActor")
+
+  @@map("users")
+}
+
+model Role {
+  id          String      @id @default(uuid())
+  name        RoleName    @unique
+  description String?
+  isSystem    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  userRoles   UserRole[]
+  invites     Invite[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  id             String         @id @default(uuid())
+  userId         String
+  roleId         String
+  organizationId String?
+  createdAt      DateTime       @default(now())
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           Role           @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  organization   Organization?  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId, organizationId])
+  @@index([organizationId])
+  @@map("user_roles")
+}
+
+model RefreshToken {
+  id               String         @id @default(uuid())
+  userId           String
+  organizationId   String?
+  tokenHash        String         @unique
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  replacedByTokenId String?
+  createdByIp      String?
+  lastUsedAt       DateTime?
+  lastUsedIp       String?
+  createdAt        DateTime       @default(now())
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization     Organization?  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model Invite {
+  id              String        @id @default(uuid())
+  organizationId  String
+  email           String
+  roleId          String
+  tokenHash       String        @unique
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  invitedByUserId String
+  createdAt       DateTime      @default(now())
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role            Role          @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  invitedBy       User          @relation("InviteCreatedBy", fields: [invitedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, email])
+  @@map("invites")
+}
+
+model AuditLog {
+  id             String         @id @default(uuid())
+  actorUserId    String?
+  organizationId String?
+  action         String
+  targetType     String
+  targetId       String?
+  outcome        AuditOutcome
+  ipAddress      String?
+  metadataJson   Json?
+  createdAt      DateTime       @default(now())
+  actorUser      User?          @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  organization   Organization?  @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("audit_logs")
 }

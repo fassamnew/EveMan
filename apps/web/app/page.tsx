@@ -1,4 +1,5 @@
 import { StatusBadge } from '@evemange/ui';
+import Link from 'next/link';
 
 export default async function HomePage() {
   let apiStatus = 'unreachable';
@@ -21,6 +22,9 @@ export default async function HomePage() {
         <li>API app: NestJS on port 5001</li>
         <li>Infrastructure: MySQL and Redis via Docker Compose</li>
       </ul>
+      <p>
+        <Link href="/login">Go to login</Link>
+      </p>
       <p>
         API health status:{' '}
         <StatusBadge label={apiStatus} tone={apiStatus === 'ok' ? 'success' : 'warning'} />

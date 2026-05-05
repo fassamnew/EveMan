@@ -1,0 +1,12 @@
+DELETE FROM `audit_logs`;
+DELETE FROM `invites`;
+DELETE FROM `refresh_tokens`;
+DELETE FROM `user_roles`;
+DELETE FROM `roles` WHERE `name` IN ('SUPER_ADMIN', 'ORG_ADMIN', 'ORG_STAFF');
+DROP TABLE IF EXISTS `audit_logs`;
+DROP TABLE IF EXISTS `invites`;
+DROP TABLE IF EXISTS `refresh_tokens`;
+DROP TABLE IF EXISTS `user_roles`;
+DROP TABLE IF EXISTS `roles`;
+DROP TABLE IF EXISTS `users`;
+DROP TABLE IF EXISTS `organizations`;

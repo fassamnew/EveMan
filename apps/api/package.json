@@ -8,10 +8,12 @@
     "start": "node dist/main.js",
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
     "db:generate": "prisma generate",
     "db:migrate:dev": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
-    "db:rollback:baseline": "prisma db execute --file prisma/migrations/0001_init/down.sql --schema prisma/schema.prisma"
+    "db:rollback:baseline": "prisma db execute --file prisma/migrations/0001_init/down.sql --schema prisma/schema.prisma",
+    "db:rollback:identity": "prisma db execute --file prisma/migrations/0002_identity_tenancy/down.sql --schema prisma/schema.prisma"
   },
   "dependencies": {
     "@evemange/config": "0.1.0",
@@ -23,18 +25,23 @@
     "@opentelemetry/exporter-trace-otlp-http": "^0.216.0",
     "@opentelemetry/sdk-node": "^0.216.0",
     "@prisma/client": "^5.20.0",
+    "argon2": "^0.41.1",
     "bullmq": "^5.16.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "dotenv": "^17.2.2",
     "ioredis": "^5.4.1",
+    "jsonwebtoken": "^9.0.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
   "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.9",
     "@types/node": "^22.7.4",
     "prisma": "^5.20.0",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^5.6.2"
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.8"
   }
 }

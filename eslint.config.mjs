@@ -33,5 +33,11 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-require-imports': 'off'
     }
+  },
+  {
+    files: ['**/*.test.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off'
+    }
   }
 );
