@@ -1,8 +1,31 @@
 import sqlite3 from 'sqlite3';
 import { open, Database } from 'sqlite';
 import path from 'path';
+import bcrypt from 'bcryptjs';
 
 let db: Database;
+
+async function seedInitialAdmin(database: Database): Promise<void> {
+  const username = process.env.INITIAL_ADMIN_USERNAME?.trim();
+  const password = process.env.INITIAL_ADMIN_PASSWORD;
+  const email = process.env.INITIAL_ADMIN_EMAIL?.trim().toLowerCase() || null;
+
+  if (!username || !password) {
+    return;
+  }
+
+  const existingAdmin = await database.get('SELECT id FROM users WHERE role = ? LIMIT 1', ['admin']);
+  if (existingAdmin) {
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  await database.run(
+    `INSERT INTO users (id, username, email, passwordHash, role, isActive)
+     VALUES (lower(hex(randomblob(16))), ?, ?, ?, 'admin', 1)`,
+    [username.toLowerCase(), email, passwordHash]
+  );
+}
 
 export async function initDb() {
   db = await open({
@@ -11,85 +34,64 @@ export async function initDb() {
   });
 
   await db.exec(`
-    -- Organizers Table
-    CREATE TABLE IF NOT EXISTS organizers (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      logoUrl TEXT,
-      createdAt TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    -- Users Table (Organizers/Staff)
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      organizerId TEXT NOT NULL,
-      fullName TEXT NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      passwordHash TEXT NOT NULL,
-      role TEXT CHECK(role IN ('Admin', 'Staff', 'Usher')) NOT NULL,
-      createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (organizerId) REFERENCES organizers(id)
-    );
-
-    -- Events Table
-    CREATE TABLE IF NOT EXISTS events (
-      id TEXT PRIMARY KEY,
-      organizerId TEXT NOT NULL,
-      name TEXT NOT NULL,
-      description TEXT,
-      location TEXT,
-      startDate TEXT,
-      endDate TEXT,
-      createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (organizerId) REFERENCES organizers(id)
-    );
-
-    -- Registration Links Table
-    CREATE TABLE IF NOT EXISTS registration_links (
-      id TEXT PRIMARY KEY,
-      eventId TEXT NOT NULL,
-      slug TEXT UNIQUE NOT NULL,
-      label TEXT NOT NULL,
-      category TEXT NOT NULL,
-      requiresApproval INTEGER DEFAULT 0,
-      capacity INTEGER,
-      formFields TEXT, -- JSON string for custom fields
-      themeColor TEXT DEFAULT '#003366',
-      createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (eventId) REFERENCES events(id)
-    );
-
-    -- Attendees Table (Refactored)
     CREATE TABLE IF NOT EXISTS attendees (
       id TEXT PRIMARY KEY,
-      eventId TEXT NOT NULL,
-      registrationLinkId TEXT NOT NULL,
       fullName TEXT NOT NULL,
-      email TEXT NOT NULL,
-      phone TEXT,
       designation TEXT,
       company TEXT,
-      status TEXT CHECK(status IN ('Pending', 'Approved', 'Rejected')) DEFAULT 'Pending',
+      email TEXT UNIQUE NOT NULL,
+      phone TEXT,
+      category TEXT CHECK(category IN ('Delegate', 'Media')) NOT NULL,
       qrCodePath TEXT,
       badgePath TEXT,
       checkedIn INTEGER DEFAULT 0,
       checkInTime TEXT,
-      createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (eventId) REFERENCES events(id),
-      FOREIGN KEY (registrationLinkId) REFERENCES registration_links(id),
-      UNIQUE(eventId, email) -- Email must be unique per event
-    );
-
-    -- Assets Table (Logos, Templates)
-    CREATE TABLE IF NOT EXISTS assets (
-      id TEXT PRIMARY KEY,
-      eventId TEXT NOT NULL,
-      type TEXT CHECK(type IN ('Logo', 'BadgeTemplate')) NOT NULL,
-      filePath TEXT NOT NULL,
-      createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (eventId) REFERENCES events(id)
-    );
+      createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+    )
   `);
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      email TEXT UNIQUE,
+      passwordHash TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('admin', 'staff')),
+      isActive INTEGER NOT NULL DEFAULT 1,
+      failedLoginCount INTEGER NOT NULL DEFAULT 0,
+      lockedUntil TEXT,
+      lastLoginAt TEXT,
+      createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS refresh_tokens (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      tokenHash TEXT NOT NULL UNIQUE,
+      expiresAt TEXT NOT NULL,
+      revokedAt TEXT,
+      ipAddress TEXT,
+      userAgent TEXT,
+      createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id TEXT PRIMARY KEY,
+      actorUserId TEXT,
+      action TEXT NOT NULL,
+      metadata TEXT,
+      createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(actorUserId) REFERENCES users(id) ON DELETE SET NULL
+    )
+  `);
+
+  await seedInitialAdmin(db);
 
   console.log('Database initialized');
   return db;

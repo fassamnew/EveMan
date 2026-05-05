@@ -13,16 +13,18 @@ import { sendBadgeEmail, sendBulkReminder } from './emailService';
 import multer from 'multer';
 import { parse } from 'csv-parse';
 import { logErrorWithContext, logInfo, logWarn, requestLogger } from './logger';
-import jwt from 'jsonwebtoken';
+import { authenticate, authorize, loginWithPassword, revokeRefreshToken, rotateRefreshToken } from './auth';
 
 dotenv.config();
 
 export const app = express();
 const PORT = process.env.PORT || 5001;
-const ADMIN_API_KEY = process.env.ADMIN_API_KEY;
 const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
 const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || 300);
 const MAX_CSV_FILE_SIZE_BYTES = Number(process.env.MAX_CSV_FILE_SIZE_BYTES || 2 * 1024 * 1024);
+const LOGIN_RATE_LIMIT_WINDOW_MS = Number(process.env.LOGIN_RATE_LIMIT_WINDOW_MS || 10 * 60 * 1000);
+const LOGIN_RATE_LIMIT_MAX = Number(process.env.LOGIN_RATE_LIMIT_MAX || 10);
+const JWT_SECRET = process.env.JWT_SECRET;
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
   .split(',')
@@ -33,8 +35,8 @@ if (allowedOrigins.length === 0) {
   logWarn('ALLOWED_ORIGINS is not configured; CORS is currently open to all origins');
 }
 
-if (!ADMIN_API_KEY) {
-  logWarn('ADMIN_API_KEY is not configured; admin endpoints are not protected by API key');
+if (!JWT_SECRET || JWT_SECRET.length < 32) {
+  logWarn('JWT_SECRET is missing or too short; use a strong secret with at least 32 characters');
 }
 
 const globalRateLimiter = rateLimit({
@@ -43,6 +45,14 @@ const globalRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' }
+});
+
+const loginRateLimiter = rateLimit({
+  windowMs: LOGIN_RATE_LIMIT_WINDOW_MS,
+  max: LOGIN_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts, please try again later.' }
 });
 
 app.use(helmet());
@@ -64,21 +74,6 @@ app.use(cors({
 app.use(express.json());
 app.use(requestLogger);
 app.use('/api', globalRateLimiter);
-
-function requireAdminApiKey(req: Request, res: Response, next: NextFunction): void {
-  if (!ADMIN_API_KEY) {
-    next();
-    return;
-  }
-
-  const providedApiKey = req.header('x-api-key');
-  if (providedApiKey !== ADMIN_API_KEY) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return;
-  }
-
-  next();
-}
 
 function validateRegistrationPayload(req: Request, res: Response, next: NextFunction): void {
   const { fullName, designation, company, email, phone, category } = req.body;
@@ -179,6 +174,66 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
+  try {
+    const { username, email, password } = req.body || {};
+    const identity = typeof username === 'string' ? username : email;
+
+    if (typeof identity !== 'string' || identity.trim().length < 3 || typeof password !== 'string' || password.length < 8) {
+      res.status(400).json({ error: 'Valid identity and password are required' });
+      return;
+    }
+
+    const result = await loginWithPassword(identity, password, req.ip, req.get('user-agent') || undefined);
+    if (!result) {
+      res.status(401).json({ error: 'Invalid credentials' });
+      return;
+    }
+
+    res.json(result);
+  } catch (error) {
+    logErrorWithContext(error, 'Auth login endpoint failed');
+    res.status(500).json({ error: 'Authentication failed' });
+  }
+});
+
+app.post('/api/auth/refresh', async (req, res) => {
+  try {
+    const { refreshToken } = req.body || {};
+    if (typeof refreshToken !== 'string' || refreshToken.length < 20) {
+      res.status(400).json({ error: 'refreshToken is required' });
+      return;
+    }
+
+    const result = await rotateRefreshToken(refreshToken, req.ip, req.get('user-agent') || undefined);
+    if (!result) {
+      res.status(401).json({ error: 'Invalid refresh token' });
+      return;
+    }
+
+    res.json(result);
+  } catch (error) {
+    logErrorWithContext(error, 'Auth refresh endpoint failed');
+    res.status(500).json({ error: 'Token refresh failed' });
+  }
+});
+
+app.post('/api/auth/logout', authenticate, async (req, res) => {
+  try {
+    const { refreshToken } = req.body || {};
+    if (typeof refreshToken !== 'string' || refreshToken.length < 20) {
+      res.status(400).json({ error: 'refreshToken is required' });
+      return;
+    }
+
+    await revokeRefreshToken(refreshToken);
+    res.json({ message: 'Logged out' });
+  } catch (error) {
+    logErrorWithContext(error, 'Auth logout endpoint failed');
+    res.status(500).json({ error: 'Logout failed' });
+  }
+});
+
 // Registration endpoint
 app.post('/api/register', validateRegistrationPayload, async (req, res) => {
   try {
@@ -232,7 +287,7 @@ app.post('/api/register', validateRegistrationPayload, async (req, res) => {
 });
 
 // Bulk Reminder endpoint
-app.post('/api/bulk-email', verifyToken, validateBulkEmailPayload, async (req, res) => {
+app.post('/api/bulk-email', authenticate, authorize(['admin']), validateBulkEmailPayload, async (req, res) => {
   try {
     const { subject, message } = req.body;
     const db = await initDb();
@@ -275,7 +330,7 @@ app.post('/api/verify/:id', async (req, res) => {
 });
 
 // CSV Import endpoint
-app.post('/api/import-csv', verifyToken, upload.single('file'), async (req, res) => {
+app.post('/api/import-csv', authenticate, authorize(['admin']), upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
@@ -351,38 +406,4 @@ process.on('unhandledRejection', reason => {
 process.on('uncaughtException', error => {
   logErrorWithContext(error, 'Uncaught exception');
   process.exit(1);
-});
-
-const JWT_SECRET = process.env.JWT_SECRET || 'default-secret';
-const JWT_EXPIRATION = process.env.JWT_EXPIRATION || '1h';
-
-function generateToken(payload: object): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRATION });
-}
-
-function verifyToken(req: Request, res: Response, next: NextFunction): void {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  const token = authHeader.split(' ')[1];
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (err) {
-    return res.status(401).json({ error: 'Invalid or expired token' });
-  }
-}
-
-app.post('/api/login', (req, res) => {
-  const { username, password } = req.body;
-
-  if (username === process.env.ADMIN_USERNAME && password === process.env.ADMIN_PASSWORD) {
-    const token = generateToken({ username });
-    return res.json({ token });
-  }
-
-  return res.status(401).json({ error: 'Invalid credentials' });
 });
