@@ -1,9 +1,11 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
-import { SUPER_ADMIN_ROLE } from '../auth.types';
+import { CanActivate, ExecutionContext, ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import type { RequestWithAuth } from '../request-with-auth';
+import { PolicyService } from '../policy.service';
 
 @Injectable()
 export class SuperAdminGuard implements CanActivate {
+  constructor(@Inject(PolicyService) private readonly policy: PolicyService) {}
+
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest<RequestWithAuth>();
     const auth = req.auth;
@@ -12,7 +14,7 @@ export class SuperAdminGuard implements CanActivate {
       throw new ForbiddenException('Missing auth context');
     }
 
-    if (!auth.roles.includes(SUPER_ADMIN_ROLE)) {
+    if (!this.policy.canCreateOrganization(auth)) {
       throw new ForbiddenException('Super Admin role required');
     }
 

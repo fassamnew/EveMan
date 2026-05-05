@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException
 } from '@nestjs/common';
@@ -10,6 +11,7 @@ import { PrismaService } from '../../infra/db/prisma.service';
 import { AuditService } from '../common/audit.service';
 import { TokenService } from '../common/token.service';
 import { PasswordService } from '../common/password.service';
+import { PolicyService } from '../common/policy.service';
 import type { RequestWithAuth } from '../common/request-with-auth';
 import type { CreateOrganizationDto } from './dto/create-organization.dto';
 import type { InviteUserDto } from './dto/invite-user.dto';
@@ -18,10 +20,11 @@ import type { ActivateInviteDto } from './dto/activate-invite.dto';
 @Injectable()
 export class OrganizationsService {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly audit: AuditService,
-    private readonly tokenService: TokenService,
-    private readonly passwordService: PasswordService
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(TokenService) private readonly tokenService: TokenService,
+    @Inject(PasswordService) private readonly passwordService: PasswordService,
+    @Inject(PolicyService) private readonly policy: PolicyService
   ) {}
 
   private getClientIp(req: RequestWithAuth): string | null {
@@ -59,7 +62,7 @@ export class OrganizationsService {
       throw new ForbiddenException('Authenticated user required');
     }
 
-    const canInvite = req.auth.roles.includes('ORG_ADMIN') || req.auth.roles.includes('SUPER_ADMIN');
+    const canInvite = this.policy.canInviteUsers(req.auth, orgCode);
     if (!canInvite) {
       throw new ForbiddenException('ORG_ADMIN role required to invite users');
     }

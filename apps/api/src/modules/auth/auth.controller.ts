@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   HttpCode,
+  Inject,
   Post,
   Req,
   UseGuards
@@ -16,7 +17,7 @@ import { AuthRateLimitGuard } from '../common/guards/auth-rate-limit.guard';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(@Inject(AuthService) private readonly authService: AuthService) {}
 
   @UseGuards(AuthRateLimitGuard)
   @Post('login')

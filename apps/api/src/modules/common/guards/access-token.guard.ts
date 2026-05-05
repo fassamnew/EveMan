@@ -1,10 +1,10 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { TokenService } from '../token.service';
 import type { RequestWithAuth } from '../request-with-auth';
 
 @Injectable()
 export class AccessTokenGuard implements CanActivate {
-  constructor(private readonly tokenService: TokenService) {}
+  constructor(@Inject(TokenService) private readonly tokenService: TokenService) {}
 
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest<RequestWithAuth>();

@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import type { AuthContext } from './auth.types';
+import { SecretsService } from './secrets.service';
 
 export type AccessTokenPayload = {
   sub: string;
@@ -13,20 +14,14 @@ export type AccessTokenPayload = {
 
 @Injectable()
 export class TokenService {
+  constructor(@Inject(SecretsService) private readonly secretsService: SecretsService) {}
+
   private getAccessSecret(): string {
-    const value = process.env.JWT_ACCESS_SECRET;
-    if (!value) {
-      throw new Error('JWT_ACCESS_SECRET is required');
-    }
-    return value;
+    return this.secretsService.getJwtSecrets().accessSecret;
   }
 
   private getRefreshSecret(): string {
-    const value = process.env.JWT_REFRESH_SECRET;
-    if (!value) {
-      throw new Error('JWT_REFRESH_SECRET is required');
-    }
-    return value;
+    return this.secretsService.getJwtSecrets().refreshSecret;
   }
 
   private getAccessTtl(): string {

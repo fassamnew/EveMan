@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   UnauthorizedException
 } from '@nestjs/common';
@@ -18,10 +19,10 @@ const LOCKOUT_MINUTES = 15;
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly passwordService: PasswordService,
-    private readonly tokenService: TokenService,
-    private readonly audit: AuditService
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(PasswordService) private readonly passwordService: PasswordService,
+    @Inject(TokenService) private readonly tokenService: TokenService,
+    @Inject(AuditService) private readonly audit: AuditService
   ) {}
 
   private getClientIp(req: RequestWithAuth): string | null {

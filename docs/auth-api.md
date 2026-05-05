@@ -91,9 +91,16 @@ sequenceDiagram
 2. Access token auth context must match tenant path unless role includes `SUPER_ADMIN`.
 3. Cross-tenant requests are denied with `403`.
 
+## RBAC Policy Helpers
+
+1. `PolicyService.canCreateOrganization` gates Super Admin organization creation.
+2. `PolicyService.canInviteUsers` gates invite actions for `ORG_ADMIN` in-tenant or `SUPER_ADMIN` globally.
+3. `PolicyService.canAccessTenant` is used by tenant guards to block cross-org access.
+
 ## Security Controls
 
 1. Password hashing: Argon2id only.
 2. Auth endpoint rate limiting enabled.
 3. Lockout after repeated failed logins.
 4. Audit logs for login, refresh, logout, invite creation, and invite acceptance.
+5. In non-local environments, JWT secrets are loaded from AWS Secrets Manager (`SECRET_MANAGER_PROVIDER=aws`).

@@ -2,6 +2,14 @@ export type AppEnv = {
   API_PORT: number;
   NODE_ENV: 'development' | 'test' | 'production';
   CORS_ORIGINS: string;
+  JWT_ACCESS_SECRET?: string;
+  JWT_REFRESH_SECRET?: string;
+  JWT_ACCESS_TTL: string;
+  JWT_REFRESH_TTL_DAYS: number;
+  SECRET_MANAGER_PROVIDER?: 'aws';
+  SECRET_MANAGER_REGION?: string;
+  JWT_ACCESS_SECRET_ID?: string;
+  JWT_REFRESH_SECRET_ID?: string;
   DATABASE_URL?: string;
   REDIS_HOST: string;
   REDIS_PORT: number;

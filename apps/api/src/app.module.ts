@@ -5,6 +5,8 @@ import { PrismaService } from './infra/db/prisma.service';
 import { AuditService } from './modules/common/audit.service';
 import { PasswordService } from './modules/common/password.service';
 import { TokenService } from './modules/common/token.service';
+import { PolicyService } from './modules/common/policy.service';
+import { SecretsService } from './modules/common/secrets.service';
 import { AuthController } from './modules/auth/auth.controller';
 import { AuthService } from './modules/auth/auth.service';
 import { OrganizationsController } from './modules/organizations/organizations.controller';
@@ -22,6 +24,8 @@ import { IdentityBootstrapService } from './modules/organizations/identity-boots
   providers: [
     PrismaService,
     AuditService,
+    SecretsService,
+    PolicyService,
     PasswordService,
     TokenService,
     AuthService,

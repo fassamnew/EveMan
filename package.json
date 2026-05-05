@@ -15,6 +15,7 @@
     "typecheck": "npm run typecheck -w @evemange/config && npm run typecheck -w @evemange/ui && npm run typecheck -w @evemange/api && npm run typecheck -w @evemange/web",
     "lint": "npm run lint -w @evemange/config && npm run lint -w @evemange/ui && npm run lint -w @evemange/api && npm run lint -w @evemange/web",
     "test": "npm run test -w @evemange/config && npm run test -w @evemange/ui && npm run test -w @evemange/api",
+    "test:integration": "npm run test:integration -w @evemange/api",
     "docker:up": "docker compose -f infra/docker-compose.yml up -d",
     "docker:down": "docker compose -f infra/docker-compose.yml down",
     "db:generate": "npm run db:generate -w @evemange/api",

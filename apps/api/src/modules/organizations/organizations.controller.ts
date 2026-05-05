@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Inject, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { OrganizationsService } from './organizations.service';
 import type { RequestWithAuth } from '../common/request-with-auth';
 import { AccessTokenGuard } from '../common/guards/access-token.guard';
@@ -10,7 +10,9 @@ import { ActivateInviteDto } from './dto/activate-invite.dto';
 
 @Controller()
 export class OrganizationsController {
-  constructor(private readonly organizationsService: OrganizationsService) {}
+  constructor(
+    @Inject(OrganizationsService) private readonly organizationsService: OrganizationsService
+  ) {}
 
   @UseGuards(AccessTokenGuard, SuperAdminGuard)
   @Post('super-admin/organizations')

@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { RoleName } from '@prisma/client';
 import { PrismaService } from '../../infra/db/prisma.service';
 import { PasswordService } from '../common/password.service';
@@ -14,8 +14,8 @@ export class IdentityBootstrapService implements OnModuleInit {
   private readonly logger = new Logger(IdentityBootstrapService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly passwordService: PasswordService
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(PasswordService) private readonly passwordService: PasswordService
   ) {}
 
   async onModuleInit(): Promise<void> {
