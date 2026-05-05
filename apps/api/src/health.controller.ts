@@ -9,4 +9,11 @@ export class HealthController {
       service: 'evemange-api'
     };
   }
+
+  @Get('ready')
+  getReadiness() {
+    return {
+      status: 'ready'
+    };
+  }
 }

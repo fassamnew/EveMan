@@ -11,9 +11,13 @@
     "dev:api": "npm run dev -w @evemange/api",
     "dev:web": "npm run dev -w @evemange/web",
     "build": "npm run build -w @evemange/api && npm run build -w @evemange/web",
+    "typecheck": "npm run typecheck -w @evemange/api && npm run typecheck -w @evemange/web",
     "lint": "npm run lint -w @evemange/api && npm run lint -w @evemange/web",
     "docker:up": "docker compose -f infra/docker-compose.yml up -d",
-    "docker:down": "docker compose -f infra/docker-compose.yml down"
+    "docker:down": "docker compose -f infra/docker-compose.yml down",
+    "db:generate": "npm run db:generate -w @evemange/api",
+    "db:migrate:dev": "npm run db:migrate:dev -w @evemange/api",
+    "db:migrate:deploy": "npm run db:migrate:deploy -w @evemange/api"
   },
   "engines": {
     "node": ">=20"

@@ -1,0 +1,8 @@
+# Default code owners
+* @fitsum
+
+# Domain ownership
+/apps/api/ @fitsum
+/apps/web/ @fitsum
+/infra/ @fitsum
+/docs/ @fitsum
