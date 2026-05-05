@@ -129,12 +129,17 @@ export class AuthService {
 
     let organizationId: string | null = null;
     let organizationCode: string | null = null;
+    const requestedOrgId = dto.orgId?.trim() || null;
+    const requestedOrgCode = dto.orgCode?.trim() || null;
 
     const superAdminAssignment = user.userRoles.find(item => item.role.name === 'SUPER_ADMIN');
 
-    if (dto.orgCode) {
+    if (requestedOrgId || requestedOrgCode) {
       const assignment = user.userRoles.find(
-        item => item.organization?.code === dto.orgCode
+        item =>
+          item.organizationId !== null &&
+          (!requestedOrgId || item.organizationId === requestedOrgId) &&
+          (!requestedOrgCode || item.organization?.code === requestedOrgCode)
       );
 
       if (!assignment) {
@@ -144,12 +149,16 @@ export class AuthService {
       organizationId = assignment.organizationId;
       organizationCode = assignment.organization?.code || null;
     } else if (!superAdminAssignment) {
-      throw new BadRequestException('orgCode is required for organization users');
+      throw new BadRequestException('orgId is required for organization users');
     }
 
     const roleSet = new Set<RoleName>();
     for (const assignment of user.userRoles) {
-      if (!dto.orgCode || assignment.organization?.code === dto.orgCode || assignment.role.name === 'SUPER_ADMIN') {
+      if (
+        !organizationId ||
+        assignment.organizationId === organizationId ||
+        assignment.role.name === 'SUPER_ADMIN'
+      ) {
         roleSet.add(assignment.role.name);
       }
     }
@@ -196,6 +205,7 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
         roles: [...roleSet],
+        organizationId,
         organizationCode
       }
     };

@@ -20,13 +20,14 @@ This document defines the Phase 1 identity API contract and token lifecycle beha
 {
   "email": "admin@acme.com",
   "password": "StrongPass123!",
-  "orgCode": "acme"
+  "orgId": "org_1234567890"
 }
 ```
 
 Notes:
-1. `orgCode` is required for non-super-admin users.
-2. Super Admin can log in without `orgCode`.
+1. `orgId` is required for non-super-admin users.
+2. Super Admin can log in without org targeting.
+3. `orgCode` is still accepted for backward compatibility during migration.
 
 ## Login Response
 
@@ -61,7 +62,7 @@ sequenceDiagram
   participant API
   participant DB
 
-  Client->>API: POST /auth/login (email, password, orgCode)
+  Client->>API: POST /auth/login (email, password, orgId)
   API->>DB: lookup user + roles
   API->>API: verify Argon2id hash
   API->>DB: store hashed refresh token

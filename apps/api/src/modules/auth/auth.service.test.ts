@@ -40,7 +40,7 @@ function createServiceHarness() {
 }
 
 describe('AuthService.login', () => {
-  it('logs in org user with valid orgCode and returns tokens', async () => {
+  it('logs in org user with valid orgId and returns tokens', async () => {
     const { service, prisma, passwordService, tokenService } = createServiceHarness();
 
     prisma.user.findUnique.mockResolvedValue({
@@ -72,7 +72,7 @@ describe('AuthService.login', () => {
       {
         email: 'staff@example.com',
         password: 'StrongPass123',
-        orgCode: 'acme'
+        orgId: 'org-id'
       },
       { ip: '127.0.0.1' } as any
     );
@@ -83,7 +83,7 @@ describe('AuthService.login', () => {
     expect(prisma.refreshToken.create).toHaveBeenCalledTimes(1);
   });
 
-  it('requires orgCode for non-super-admin login', async () => {
+  it('requires orgId for non-super-admin login', async () => {
     const { service, prisma, passwordService } = createServiceHarness();
 
     prisma.user.findUnique.mockResolvedValue({
@@ -149,7 +149,7 @@ describe('AuthService.login', () => {
         {
           email: 'staff@example.com',
           password: 'WrongPass123',
-          orgCode: 'acme'
+          orgId: 'org-id'
         },
         { ip: '127.0.0.1' } as any
       )

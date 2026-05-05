@@ -13,5 +13,10 @@ export class LoginDto {
   @IsOptional()
   @IsString()
   @MaxLength(64)
+  orgId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
   orgCode?: string;
 }

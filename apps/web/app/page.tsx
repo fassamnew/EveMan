@@ -23,7 +23,10 @@ export default async function HomePage() {
         <li>Infrastructure: MySQL and Redis via Docker Compose</li>
       </ul>
       <p>
-        <Link href="/login">Go to login</Link>
+        <Link href="/sa">Super Admin login</Link>
+      </p>
+      <p>
+        <Link href="/o/acme">Organization login example</Link>
       </p>
       <p>
         API health status:{' '}

@@ -11,7 +11,7 @@ export default function SuperAdminPage() {
   useEffect(() => {
     const session = loadSession();
     if (!session || !session.roles.includes('SUPER_ADMIN')) {
-      router.replace('/login');
+      router.replace('/sa');
       return;
     }
     setEmail(session.email);
@@ -26,7 +26,7 @@ export default function SuperAdminPage() {
         type="button"
         onClick={() => {
           clearSession();
-          router.push('/login');
+          router.push('/sa');
         }}
       >
         Sign out

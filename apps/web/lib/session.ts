@@ -1,6 +1,7 @@
 export type Session = {
   accessToken: string;
   refreshToken: string;
+  organizationId: string | null;
   organizationCode: string | null;
   roles: string[];
   email: string;
