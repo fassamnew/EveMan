@@ -10,14 +10,16 @@
     "dev": "npm run dev -w @evemange/api & npm run dev -w @evemange/web",
     "dev:api": "npm run dev -w @evemange/api",
     "dev:web": "npm run dev -w @evemange/web",
-    "build": "npm run build -w @evemange/api && npm run build -w @evemange/web",
-    "typecheck": "npm run typecheck -w @evemange/api && npm run typecheck -w @evemange/web",
-    "lint": "npm run lint -w @evemange/api && npm run lint -w @evemange/web",
+    "build": "npm run build -w @evemange/config && npm run build -w @evemange/ui && npm run build -w @evemange/api && npm run build -w @evemange/web",
+    "typecheck": "npm run typecheck -w @evemange/config && npm run typecheck -w @evemange/ui && npm run typecheck -w @evemange/api && npm run typecheck -w @evemange/web",
+    "lint": "npm run lint -w @evemange/config && npm run lint -w @evemange/ui && npm run lint -w @evemange/api && npm run lint -w @evemange/web",
+    "test": "npm run test -w @evemange/config && npm run test -w @evemange/ui",
     "docker:up": "docker compose -f infra/docker-compose.yml up -d",
     "docker:down": "docker compose -f infra/docker-compose.yml down",
     "db:generate": "npm run db:generate -w @evemange/api",
     "db:migrate:dev": "npm run db:migrate:dev -w @evemange/api",
-    "db:migrate:deploy": "npm run db:migrate:deploy -w @evemange/api"
+    "db:migrate:deploy": "npm run db:migrate:deploy -w @evemange/api",
+    "db:rollback:baseline": "npm run db:rollback:baseline -w @evemange/api"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

@@ -1,0 +1,16 @@
+{
+  "name": "@evemange/ui",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "scripts": {
+    "build": "node -e \"console.log('ui package build: no compile step needed')\"",
+    "lint": "eslint src --max-warnings=0",
+    "typecheck": "node -e \"console.log('ui package typecheck: declaration file maintained manually')\"",
+    "test": "node --test src/**/*.test.js"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  }
+}

@@ -52,3 +52,24 @@ jobs:
 
       - name: Analyze
         uses: github/codeql-action/analyze@v3
+
+  container-scan:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - mysql:8.4
+          - redis:7.2-alpine
+          - minio/minio:RELEASE.2024-12-18T13-15-44Z
+          - otel/opentelemetry-collector-contrib:0.115.1
+
+    steps:
+      - name: Scan container image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ matrix.image }}
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL

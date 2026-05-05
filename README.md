@@ -15,8 +15,9 @@ This branch contains a fresh Phase 0 scaffold for a production rewrite.
 1. `apps/api`
 2. `apps/web`
 3. `packages/config`
-4. `infra`
-5. `sprints`
+4. `packages/ui`
+5. `infra`
+6. `sprints`
 
 ## Quick Start
 
@@ -50,6 +51,12 @@ npm run dev:api
 npm run dev:web
 ```
 
+6. Run baseline checks:
+
+```bash
+npm run lint && npm run typecheck && npm run test && npm run build
+```
+
 ## Default Local Ports
 
 1. Web: `http://localhost:3500`
@@ -64,3 +71,8 @@ npm run dev:web
 
 1. This is a clean rewrite baseline and intentionally excludes legacy implementation code.
 2. Use sprint documents in `sprints/` as execution guides.
+3. Baseline rollback command for Phase 0 migration:
+
+```bash
+npm run db:rollback:baseline
+```

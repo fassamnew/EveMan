@@ -1,3 +1,5 @@
+import { StatusBadge } from '@evemange/ui';
+
 export default async function HomePage() {
   let apiStatus = 'unreachable';
 
@@ -20,7 +22,8 @@ export default async function HomePage() {
         <li>Infrastructure: MySQL and Redis via Docker Compose</li>
       </ul>
       <p>
-        API health status: <strong>{apiStatus}</strong>
+        API health status:{' '}
+        <StatusBadge label={apiStatus} tone={apiStatus === 'ok' ? 'success' : 'warning'} />
       </p>
     </main>
   );

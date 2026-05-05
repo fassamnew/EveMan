@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:generate": "prisma generate",
     "db:migrate:dev": "prisma migrate dev",
-    "db:migrate:deploy": "prisma migrate deploy"
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:rollback:baseline": "prisma db execute --file prisma/migrations/0001_init/down.sql --schema prisma/schema.prisma"
   },
   "dependencies": {
     "@evemange/config": "0.1.0",
