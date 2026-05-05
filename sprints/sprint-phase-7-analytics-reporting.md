@@ -10,7 +10,7 @@ Provide operational visibility through live dashboards and secure report exports
 
 ## Scope
 
-1. Organizer dashboard metrics and trend views.
+1. Organization dashboard metrics and trend views.
 2. Check-in and category analytics.
 3. Export jobs and downloadable reports.
 4. Usher and communication performance views.
@@ -38,8 +38,8 @@ Provide operational visibility through live dashboards and secure report exports
 
 ## Data Model and API Impacts
 
-1. New /organizer/dashboard endpoints.
-2. New /organizer/reports/export endpoints.
+1. New /org/:orgCode/dashboard endpoints.
+2. New /org/:orgCode/reports/export endpoints.
 3. Extended export_jobs status lifecycle.
 
 ## Testing Plan
@@ -50,7 +50,7 @@ Provide operational visibility through live dashboards and secure report exports
 
 ## Acceptance Criteria
 
-1. Organizer sees live KPI dashboard with correct totals.
+1. Organization admin sees live KPI dashboard with correct totals.
 2. Reports generate asynchronously and download securely.
 3. Usher and communication analytics are available by event.
 

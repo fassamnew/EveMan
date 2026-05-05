@@ -6,7 +6,7 @@
 
 ## Objective
 
-Deliver organizer operational tools for attendee lifecycle management, imports, and communication workflows.
+Deliver organization-portal operational tools for attendee lifecycle management, imports, and communication workflows.
 
 ## Scope
 
@@ -29,7 +29,7 @@ Deliver organizer operational tools for attendee lifecycle management, imports, 
 5. Build duplicate strategy options: skip, update, flag.
 6. Build template CRUD for email and SMS content.
 7. Build bulk send API and queued delivery workers.
-8. Build organizer UI for attendee ops, imports, and communications.
+8. Build organization portal UI for attendee ops, imports, and communications.
 
 ## Security and Compliance Requirements
 
@@ -39,9 +39,9 @@ Deliver organizer operational tools for attendee lifecycle management, imports, 
 
 ## Data Model and API Impacts
 
-1. New /organizer/attendees endpoints.
-2. New /organizer/imports endpoints.
-3. New /organizer/communications endpoints.
+1. New /org/:orgCode/attendees endpoints.
+2. New /org/:orgCode/imports endpoints.
+3. New /org/:orgCode/communications endpoints.
 
 ## Testing Plan
 
@@ -51,7 +51,7 @@ Deliver organizer operational tools for attendee lifecycle management, imports, 
 
 ## Acceptance Criteria
 
-1. Organizer can manage attendee lifecycle from one screen.
+1. Organization staff can manage attendee lifecycle from one screen.
 2. Imports support mapping and detailed error reporting.
 3. Communication templates can be reused and tracked.
 

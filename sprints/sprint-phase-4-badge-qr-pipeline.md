@@ -29,7 +29,7 @@ Implement scalable badge and QR generation pipelines with secure tokenization an
 5. Implement badge storage to S3 with signed download URLs.
 6. Implement badge regeneration endpoint for approved users.
 7. Add renderer metrics and job failure alerting.
-8. Build organizer template management UI v1.
+8. Build organization portal template management UI v1.
 
 ## Security and Compliance Requirements
 
@@ -39,8 +39,8 @@ Implement scalable badge and QR generation pipelines with secure tokenization an
 
 ## Data Model and API Impacts
 
-1. New /organizer/templates/badges endpoints.
-2. New /organizer/registrants/:id/badge/regenerate endpoint.
+1. New /org/:orgCode/templates/badges endpoints.
+2. New /org/:orgCode/registrants/:id/badge/regenerate endpoint.
 3. New /verify/qr endpoint consumed by scanner services.
 
 ## Testing Plan
@@ -52,7 +52,7 @@ Implement scalable badge and QR generation pipelines with secure tokenization an
 ## Acceptance Criteria
 
 1. Registrant receives valid badge and QR after registration or approval.
-2. Organizer can regenerate badges safely.
+2. Organization admin can regenerate badges safely.
 3. Verification endpoint validates and rejects tampered tokens.
 
 ## Risks and Mitigations

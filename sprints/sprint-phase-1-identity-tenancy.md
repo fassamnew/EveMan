@@ -14,6 +14,7 @@ Implement secure authentication, authorization, and organization boundaries as t
 2. Login, refresh token rotation, logout, password reset initiation.
 3. Tenant-aware authorization guards.
 4. Audit logs for auth and role changes.
+5. Dedicated Super Admin interface and organization portal tenancy routing.
 
 ## Non-Goals
 
@@ -32,7 +33,9 @@ Implement secure authentication, authorization, and organization boundaries as t
 8. Implement RBAC guards and policy helpers.
 9. Implement tenant context middleware.
 10. Add auth and access audit logging.
-11. Implement frontend login and session handling.
+11. Implement frontend login and session handling for both Super Admin and organization portal.
+12. Implement tenant resolution from organization route segment `/o/:orgCode`.
+13. Add Super Admin dashboard shell for SaaS controls.
 
 ## Security and Compliance Requirements
 
@@ -45,7 +48,7 @@ Implement secure authentication, authorization, and organization boundaries as t
 
 1. New /auth endpoints for login, refresh, logout.
 2. New /super-admin/organizations endpoints.
-3. New /organizations/:id/users invitation endpoints.
+3. New /org/:orgCode/users invitation endpoints.
 
 ## Testing Plan
 
@@ -60,6 +63,7 @@ Implement secure authentication, authorization, and organization boundaries as t
 2. Invited user can activate account and log in.
 3. Tenant isolation blocks cross-org data access.
 4. Token refresh rotates and revokes old refresh tokens.
+5. Organization portal routes resolve by base URL pattern `/o/:orgCode`.
 
 ## Risks and Mitigations
 
@@ -73,3 +77,4 @@ Mitigation: Add robust token integration tests.
 1. Production-ready identity module.
 2. Tenant isolation baseline.
 3. Auth API documentation and sequence diagrams.
+4. Super Admin and organization-portal routing contract.

@@ -7,11 +7,12 @@
 3. Cache and session support: Redis.
 4. Async processing: BullMQ workers for imports, exports, emails, badge rendering.
 5. Object storage: S3-compatible storage for photos, badges, import files, and artifacts.
-6. Web frontend: Next.js for organizer and registrant portals.
+6. Web frontends: Next.js Super Admin SaaS dashboard plus organization and registrant portals.
 7. Mobile scanner app: React Native with offline-first sync queue.
 8. Observability: OpenTelemetry, Prometheus, Grafana, centralized structured logs.
 9. Deployment: Docker with Kubernetes or ECS, managed via Terraform.
 10. CI/CD: GitHub Actions with dev, staging, and production promotion gates.
+11. Tenant routing strategy: organization portal served under `/o/:orgCode` with strict tenant guards.
 
 ## 2. Security Baseline (Embedded From Day 1)
 
@@ -57,6 +58,8 @@ Deliverable: Production-ready skeleton with green pipelines.
 1. Build organizations, users, roles, permissions schema.
 2. Implement secure login, token refresh, logout, lockout, password reset.
 3. Add tenancy middleware and authorization guards.
+4. Build Super Admin dashboard shell for organization lifecycle operations.
+5. Implement organization portal routing contract under `/o/:orgCode`.
 
 Deliverable: Secure tenant-aware identity baseline.
 
@@ -66,7 +69,7 @@ Deliverable: Secure tenant-aware identity baseline.
 2. Implement multiple registration links per event.
 3. Add per-link configuration: capacity, visibility, approval, open/close windows.
 
-Deliverable: Organizers can model multi-link event structures.
+Deliverable: Organization admins can model multi-link event structures.
 
 ### Phase 3: Registrant Experience (3 weeks)
 
@@ -86,11 +89,11 @@ Deliverable: Reliable badge lifecycle with scalable generation.
 
 ### Phase 5: Attendee Ops and Communication (3 weeks)
 
-1. Build organizer attendee table with filters and lifecycle actions.
+1. Build organization portal attendee table with filters and lifecycle actions.
 2. Implement CSV and Excel import with mapping and duplicate policies.
 3. Add communication templates and bulk delivery with logs.
 
-Deliverable: Complete organizer operations console.
+Deliverable: Complete organization operations console.
 
 ### Phase 6: Mobile Scanner and Offline Sync (4 weeks)
 
@@ -165,7 +168,7 @@ Deliverable: Launch-ready platform with compliance and reliability checks.
 ### Weeks 5-6
 
 1. Events and registration links APIs.
-2. Organizer event management UI.
+2. Organization portal event management UI under `/o/:orgCode`.
 3. Dynamic registration link rules and validation.
 
 ### Weeks 7-8

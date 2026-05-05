@@ -6,7 +6,7 @@
 
 ## Objective
 
-Provide organizer-level control over events and multiple registration links with configurable rules.
+Provide organization-portal control over events and multiple registration links with configurable rules.
 
 ## Scope
 
@@ -25,7 +25,7 @@ Provide organizer-level control over events and multiple registration links with
 2. Implement event APIs: create, update, list, archive.
 3. Implement link APIs with slug uniqueness per event.
 4. Implement rule validation and effective config resolver.
-5. Add organizer portal event management pages.
+5. Add organization portal event management pages under `/o/:orgCode`.
 6. Add link management UI with settings forms.
 7. Add permission checks by organization and role.
 8. Add audit logging for event and link changes.
@@ -38,8 +38,8 @@ Provide organizer-level control over events and multiple registration links with
 
 ## Data Model and API Impacts
 
-1. New /organizer/events endpoints.
-2. New /organizer/events/:eventId/links endpoints.
+1. New /org/:orgCode/events endpoints.
+2. New /org/:orgCode/events/:eventId/links endpoints.
 3. Public metadata endpoint for active link validation.
 
 ## Testing Plan
@@ -50,7 +50,7 @@ Provide organizer-level control over events and multiple registration links with
 
 ## Acceptance Criteria
 
-1. Organizer can create multiple links per event.
+1. Organization admin can create multiple links per event.
 2. Link rules persist and resolve correctly.
 3. Only authorized users can edit event/link settings.
 
@@ -64,5 +64,5 @@ Mitigation: Add server-side effective rule pre-check.
 ## Deliverables
 
 1. Event and link management module.
-2. Organizer UI for event and link administration.
+2. Organization portal UI for event and link administration.
 3. API docs for event/link lifecycle.
