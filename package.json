@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "dev": "npm run dev -w @evemange/api & npm run dev -w @evemange/web",
+    "dev:stack": "npm run docker:up && npm run dev",
     "dev:api": "npm run dev -w @evemange/api",
     "dev:web": "npm run dev -w @evemange/web",
     "build": "npm run build -w @evemange/config && npm run build -w @evemange/ui && npm run build -w @evemange/api && npm run build -w @evemange/web",

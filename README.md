@@ -21,6 +21,14 @@ This branch contains a fresh Phase 0 scaffold for a production rewrite.
 
 ## Quick Start
 
+One-command local boot (recommended):
+
+```bash
+npm run dev:stack
+```
+
+Manual steps:
+
 1. Copy environment template:
 
 ```bash

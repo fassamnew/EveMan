@@ -74,3 +74,10 @@ Mitigation: Pin versions and enforce preflight checks.
 1. Working monorepo scaffold.
 2. CI and security baseline.
 3. Operational developer onboarding guide.
+
+## Completion Evidence
+
+1. Local environment can boot with one command via `npm run dev:stack`.
+2. Quality gates pass locally via `npm run lint && npm run typecheck && npm run test && npm run build`.
+3. Security workflow includes critical dependency audit, CodeQL, and container scanning.
+4. Migration rollback support exists for baseline via `npm run db:rollback:baseline`.
