@@ -1,6 +1,8 @@
-import express from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
 import { initDb } from './db';
 import { v4 as uuidv4 } from 'uuid';
 import QRCode from 'qrcode';
@@ -10,14 +12,158 @@ import { generateBadge } from './badgeGenerator';
 import { sendBadgeEmail, sendBulkReminder } from './emailService';
 import multer from 'multer';
 import { parse } from 'csv-parse';
+import { logErrorWithContext, logInfo, logWarn, requestLogger } from './logger';
+import jwt from 'jsonwebtoken';
 
 dotenv.config();
 
-const app = express();
+export const app = express();
 const PORT = process.env.PORT || 5001;
+const ADMIN_API_KEY = process.env.ADMIN_API_KEY;
+const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
+const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || 300);
+const MAX_CSV_FILE_SIZE_BYTES = Number(process.env.MAX_CSV_FILE_SIZE_BYTES || 2 * 1024 * 1024);
 
-app.use(cors());
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+
+if (allowedOrigins.length === 0) {
+  logWarn('ALLOWED_ORIGINS is not configured; CORS is currently open to all origins');
+}
+
+if (!ADMIN_API_KEY) {
+  logWarn('ADMIN_API_KEY is not configured; admin endpoints are not protected by API key');
+}
+
+const globalRateLimiter = rateLimit({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' }
+});
+
+app.use(helmet());
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+
+    if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error('Not allowed by CORS'));
+  }
+}));
 app.use(express.json());
+app.use(requestLogger);
+app.use('/api', globalRateLimiter);
+
+function requireAdminApiKey(req: Request, res: Response, next: NextFunction): void {
+  if (!ADMIN_API_KEY) {
+    next();
+    return;
+  }
+
+  const providedApiKey = req.header('x-api-key');
+  if (providedApiKey !== ADMIN_API_KEY) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  next();
+}
+
+function validateRegistrationPayload(req: Request, res: Response, next: NextFunction): void {
+  const { fullName, designation, company, email, phone, category } = req.body;
+  const errors: string[] = [];
+
+  if (typeof fullName !== 'string' || fullName.trim().length < 2 || fullName.trim().length > 120) {
+    errors.push('fullName must be 2-120 characters');
+  }
+
+  if (designation && (typeof designation !== 'string' || designation.length > 120)) {
+    errors.push('designation must be <= 120 characters');
+  }
+
+  if (company && (typeof company !== 'string' || company.length > 120)) {
+    errors.push('company must be <= 120 characters');
+  }
+
+  if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errors.push('email must be valid');
+  }
+
+  if (phone && (typeof phone !== 'string' || phone.length > 30)) {
+    errors.push('phone must be <= 30 characters');
+  }
+
+  if (category !== 'Delegate' && category !== 'Media') {
+    errors.push("category must be either 'Delegate' or 'Media'");
+  }
+
+  if (errors.length > 0) {
+    res.status(400).json({ error: 'Validation failed', details: errors });
+    return;
+  }
+
+  req.body = {
+    fullName: fullName.trim(),
+    designation: typeof designation === 'string' ? designation.trim() : '',
+    company: typeof company === 'string' ? company.trim() : '',
+    email: email.trim().toLowerCase(),
+    phone: typeof phone === 'string' ? phone.trim() : '',
+    category
+  };
+
+  next();
+}
+
+function validateBulkEmailPayload(req: Request, res: Response, next: NextFunction): void {
+  const { subject, message } = req.body;
+
+  if (typeof subject !== 'string' || subject.trim().length < 3 || subject.trim().length > 160) {
+    res.status(400).json({ error: 'subject must be 3-160 characters' });
+    return;
+  }
+
+  if (typeof message !== 'string' || message.trim().length < 3 || message.trim().length > 5000) {
+    res.status(400).json({ error: 'message must be 3-5000 characters' });
+    return;
+  }
+
+  req.body = {
+    subject: subject.trim(),
+    message: message.trim()
+  };
+
+  next();
+}
+
+// Setup Multer for file uploads
+const upload = multer({
+  dest: 'uploads/temp/',
+  limits: {
+    fileSize: MAX_CSV_FILE_SIZE_BYTES
+  },
+  fileFilter: (_req, file, callback) => {
+    const isCsvMimeType = file.mimetype === 'text/csv' || file.mimetype === 'application/vnd.ms-excel';
+    const isCsvFileName = file.originalname.toLowerCase().endsWith('.csv');
+
+    if (!isCsvMimeType && !isCsvFileName) {
+      callback(new Error('Only CSV files are allowed'));
+      return;
+    }
+
+    callback(null, true);
+  }
+});
 
 // Ensure directories exist
 const uploadsDir = path.join(__dirname, '../uploads');
@@ -29,18 +175,12 @@ const tempDir = path.join(uploadsDir, 'temp');
   }
 });
 
-// Serve static files from uploads directory
-app.use('/uploads', express.static(uploadsDir));
-
-// Setup Multer for file uploads
-const upload = multer({ dest: 'uploads/temp/' });
-
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
 // Registration endpoint
-app.post('/api/register', async (req, res) => {
+app.post('/api/register', validateRegistrationPayload, async (req, res) => {
   try {
     const { fullName, designation, company, email, phone, category } = req.body;
     const db = await initDb();
@@ -76,27 +216,23 @@ app.post('/api/register', async (req, res) => {
         badgePath
       });
     } catch (emailError) {
-      console.error('Email delivery failed:', emailError);
+      logErrorWithContext(emailError, 'Email delivery failed during registration');
       // We don't fail the registration if email fails, but log it
     }
 
     res.status(201).json({ 
       message: 'Registration successful', 
       attendeeId,
-      category,
-      badgeUrl: `http://localhost:${PORT}/uploads/badges/${path.basename(badgePath)}`
+      category 
     });
   } catch (error: any) {
-    console.error(error);
-    if (error.code === 'SQLITE_CONSTRAINT') {
-      return res.status(400).json({ error: 'This email is already registered.' });
-    }
-    res.status(500).json({ error: 'An unexpected error occurred. Please try again later.' });
+    logErrorWithContext(error, 'Registration endpoint failed');
+    res.status(500).json({ error: error.message });
   }
 });
 
 // Bulk Reminder endpoint
-app.post('/api/bulk-email', async (req, res) => {
+app.post('/api/bulk-email', verifyToken, validateBulkEmailPayload, async (req, res) => {
   try {
     const { subject, message } = req.body;
     const db = await initDb();
@@ -105,6 +241,7 @@ app.post('/api/bulk-email', async (req, res) => {
     const results = await sendBulkReminder(attendees, subject, message);
     res.json({ message: 'Bulk email process completed', results });
   } catch (error: any) {
+    logErrorWithContext(error, 'Bulk email endpoint failed');
     res.status(500).json({ error: error.message });
   }
 });
@@ -132,12 +269,13 @@ app.post('/api/verify/:id', async (req, res) => {
 
     res.json({ message: 'Check-in successful', ...attendee });
   } catch (error: any) {
+    logErrorWithContext(error, 'Verify endpoint failed');
     res.status(500).json({ error: error.message });
   }
 });
 
 // CSV Import endpoint
-app.post('/api/import-csv', upload.single('file'), async (req, res) => {
+app.post('/api/import-csv', verifyToken, upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
@@ -148,6 +286,18 @@ app.post('/api/import-csv', upload.single('file'), async (req, res) => {
   fs.createReadStream(req.file.path)
     .pipe(parse({ columns: true, skip_empty_lines: true }))
     .on('data', (data) => results.push(data))
+    .on('error', parseError => {
+      logErrorWithContext(parseError, 'CSV parsing failed');
+      try {
+        fs.unlinkSync(req.file!.path);
+      } catch (cleanupError) {
+        logErrorWithContext(cleanupError, 'Failed to clean up temp CSV after parse error');
+      }
+
+      if (!res.headersSent) {
+        res.status(400).json({ error: 'Invalid CSV format' });
+      }
+    })
     .on('end', async () => {
       let successCount = 0;
       let errorCount = 0;
@@ -169,7 +319,7 @@ app.post('/api/import-csv', upload.single('file'), async (req, res) => {
           );
           successCount++;
         } catch (err) {
-          console.error('Import row error:', err);
+          logErrorWithContext(err, 'CSV import row processing failed');
           errorCount++;
         }
       }
@@ -179,25 +329,60 @@ app.post('/api/import-csv', upload.single('file'), async (req, res) => {
     });
 });
 
-// Stats endpoint for Dashboard
-app.get('/api/stats', async (req, res) => {
-  try {
-    const db = await initDb();
-    const stats = await db.all(`
-      SELECT 
-        category, 
-        COUNT(*) as total,
-        SUM(CASE WHEN checkedIn = 1 THEN 1 ELSE 0 END) as checkedIn
-      FROM attendees 
-      GROUP BY category
-    `);
-    res.json(stats);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
+app.use((error: Error, _req: Request, res: Response, _next: NextFunction) => {
+  logErrorWithContext(error, 'Unhandled application error');
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 app.listen(PORT, async () => {
-  await initDb();
-  console.log(`Server running on port ${PORT}`);
+  try {
+    await initDb();
+    logInfo('Server started', { port: PORT });
+  } catch (error) {
+    logErrorWithContext(error, 'Server startup failed');
+    process.exit(1);
+  }
+});
+
+process.on('unhandledRejection', reason => {
+  logErrorWithContext(reason, 'Unhandled promise rejection');
+});
+
+process.on('uncaughtException', error => {
+  logErrorWithContext(error, 'Uncaught exception');
+  process.exit(1);
+});
+
+const JWT_SECRET = process.env.JWT_SECRET || 'default-secret';
+const JWT_EXPIRATION = process.env.JWT_EXPIRATION || '1h';
+
+function generateToken(payload: object): string {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRATION });
+}
+
+function verifyToken(req: Request, res: Response, next: NextFunction): void {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+}
+
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body;
+
+  if (username === process.env.ADMIN_USERNAME && password === process.env.ADMIN_PASSWORD) {
+    const token = generateToken({ username });
+    return res.json({ token });
+  }
+
+  return res.status(401).json({ error: 'Invalid credentials' });
 });

@@ -19,7 +19,7 @@ const CsvImport: React.FC = () => {
     formData.append('file', file);
 
     try {
-      const response = await fetch('http://localhost:5001/api/import-csv', {
+      const response = await fetch(`${window.location.protocol}//${window.location.hostname}:5001/api/import-csv`, {
         method: 'POST',
         body: formData,
       });

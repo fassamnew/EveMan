@@ -32,7 +32,7 @@ const Scanner: React.FC = () => {
 
   const verifyAttendee = async (id: string) => {
     try {
-      const response = await fetch(`http://localhost:5001/api/verify/${id}`, {
+      const response = await fetch(`${window.location.protocol}//${window.location.hostname}:5001/api/verify/${id}`, {
         method: 'POST'
       });
       const data = await response.json();
