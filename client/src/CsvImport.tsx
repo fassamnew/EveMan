@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { authFetch } from './api';
 
 const CsvImport: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
@@ -19,7 +20,7 @@ const CsvImport: React.FC = () => {
     formData.append('file', file);
 
     try {
-      const response = await fetch(`${window.location.protocol}//${window.location.hostname}:5001/api/import-csv`, {
+      const response = await authFetch('/api/import-csv', {
         method: 'POST',
         body: formData,
       });

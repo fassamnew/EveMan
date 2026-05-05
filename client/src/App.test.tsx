@@ -2,8 +2,8 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import App from './App';
 
-test('renders organizer portal login', () => {
+test('renders registration navigation', () => {
   render(<App />);
-  const loginHeader = screen.getByText(/Organizer Portal/i);
-  expect(loginHeader).toBeInTheDocument();
+  const registrationButton = screen.getByText(/Registration/i);
+  expect(registrationButton).toBeInTheDocument();
 });

@@ -174,6 +174,25 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+app.get('/api/stats', async (_req, res) => {
+  try {
+    const db = await initDb();
+    const stats = await db.all(
+      `SELECT
+         category,
+         COUNT(*) as total,
+         SUM(CASE WHEN checkedIn = 1 THEN 1 ELSE 0 END) as checkedIn
+       FROM attendees
+       GROUP BY category`
+    );
+
+    res.json(stats);
+  } catch (error) {
+    logErrorWithContext(error, 'Stats endpoint failed');
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
+
 app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
   try {
     const { username, email, password } = req.body || {};
