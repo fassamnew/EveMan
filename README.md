@@ -54,8 +54,11 @@ npm run dev:web
 
 1. Web: `http://localhost:3500`
 2. API: `http://localhost:5001/health`
-3. MySQL: `localhost:3306`
+3. MySQL (Docker): `localhost:3307`
 4. Redis: `localhost:6379`
+5. MinIO API: `http://localhost:9000`
+6. MinIO Console: `http://localhost:9001`
+7. OTEL Collector health: `http://localhost:13133`
 
 ## Notes
 

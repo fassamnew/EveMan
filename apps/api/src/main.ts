@@ -34,7 +34,6 @@ async function bootstrap() {
   process.on('SIGINT', gracefulShutdown);
   process.on('SIGTERM', gracefulShutdown);
 
-  // eslint-disable-next-line no-console
   console.log(`API running on http://localhost:${port}`);
 }
 

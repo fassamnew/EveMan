@@ -9,5 +9,6 @@ uploads/
 .env.local
 .env.*.local
 .DS_Store
+*.tsbuildinfo
 pnpm-lock.yaml
 yarn.lock

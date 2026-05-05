@@ -19,6 +19,12 @@
     "db:migrate:dev": "npm run db:migrate:dev -w @evemange/api",
     "db:migrate:deploy": "npm run db:migrate:deploy -w @evemange/api"
   },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "eslint": "^9.17.0",
+    "globals": "^15.14.0",
+    "typescript-eslint": "^8.18.0"
+  },
   "engines": {
     "node": ">=20"
   }

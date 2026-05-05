@@ -6,7 +6,16 @@ const envSchema = z.object({
   CORS_ORIGINS: z.string().default('http://localhost:3500'),
   DATABASE_URL: z.string().optional(),
   REDIS_HOST: z.string().default('localhost'),
-  REDIS_PORT: z.coerce.number().default(6379)
+  REDIS_PORT: z.coerce.number().default(6379),
+  OTEL_ENABLED: z.coerce.boolean().default(true),
+  OTEL_DEBUG: z.coerce.boolean().default(false),
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: z.string().default('http://localhost:4318/v1/traces'),
+  S3_ENDPOINT: z.string().default('http://localhost:9000'),
+  S3_REGION: z.string().default('us-east-1'),
+  S3_BUCKET: z.string().default('evemange-dev'),
+  S3_ACCESS_KEY: z.string().default('minioadmin'),
+  S3_SECRET_KEY: z.string().default('minioadmin'),
+  S3_FORCE_PATH_STYLE: z.coerce.boolean().default(true)
 });
 
 function readAppEnv(source = process.env) {
