@@ -1,0 +1,21 @@
+{
+  "name": "evemange-platform",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @evemange/api & npm run dev -w @evemange/web",
+    "dev:api": "npm run dev -w @evemange/api",
+    "dev:web": "npm run dev -w @evemange/web",
+    "build": "npm run build -w @evemange/api && npm run build -w @evemange/web",
+    "lint": "npm run lint -w @evemange/api && npm run lint -w @evemange/web",
+    "docker:up": "docker compose -f infra/docker-compose.yml up -d",
+    "docker:down": "docker compose -f infra/docker-compose.yml down"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,87 +1,63 @@
-# NH Event Registration & Attendance Management System
+# EveMange Production Rewrite
 
-A professional, full-stack event management solution designed for high-volume registration, real-time monitoring, and onsite check-in. This system is optimized for local or VPS deployment and does not require AWS.
+This branch contains a fresh Phase 0 scaffold for a production rewrite.
 
-## 🚀 Features
+## Stack Baseline
 
-- **Pre-Event Registration:** Professional web portal for Delegates and Media.
-- **Automated Badge Generation:** 
-  - Dynamic PDF generation (4x6 inches).
-  - Category-based color themes (Delegates: Navy, Media: Red).
-  - Embedded unique QR codes.
-- **Real-Time Dashboard:** Live monitoring of registration totals and attendance percentages.
-- **Onsite QR Scanner:** Mobile-friendly web scanner for instant entry verification and check-in.
-- **Bulk Communication:** Integrated email service for sending badges and mass reminders.
-- **Mass Data Import:** Support for importing external attendee lists via CSV.
-- **Zero-Config Database:** Uses SQLite for persistent local storage without complex setup.
+1. API: NestJS (TypeScript)
+2. Web: Next.js (TypeScript)
+3. Database: MySQL 8
+4. Cache and queue backend: Redis 7
+5. Infrastructure bootstrap: Docker Compose
 
-## 🏗️ Project Structure
+## Project Structure
 
-- `client/`: React + TypeScript frontend.
-- `server/`: Node.js + Express + TypeScript backend.
+1. `apps/api`
+2. `apps/web`
+3. `packages/config`
+4. `infra`
+5. `sprints`
 
-## 🛠️ Technical Stack
+## Quick Start
 
-- **Frontend:** React, TypeScript, html5-qrcode.
-- **Backend:** Node.js, Express, TypeScript, SQLite3, PDFKit, QRCode, Nodemailer.
-- **Storage:** Local SQLite database and file-system based uploads.
+1. Copy environment template:
 
-## 🚦 Getting Started
+```bash
+cp .env.example .env
+```
 
-### Prerequisites
+2. Install dependencies:
 
-- Node.js (v18 or higher)
-- npm
+```bash
+npm install
+```
 
-### Installation
+3. Start infrastructure services:
 
-1. **Clone the repository:**
-   ```bash
-   git clone <your-repo-url>
-   cd EveMange
-   ```
+```bash
+npm run docker:up
+```
 
-2. **Install Server Dependencies:**
-   ```bash
-   cd server
-   npm install
-   ```
+4. Start API:
 
-3. **Install Client Dependencies:**
-   ```bash
-   cd ../client
-   npm install
-   ```
+```bash
+npm run dev:api
+```
 
-### Configuration
+5. Start Web:
 
-1. **Configure Backend Environment:**
-   Open `server/.env` and update your SMTP settings:
-   ```env
-   EMAIL_HOST=smtp.your-provider.com
-   EMAIL_PORT=587
-   EMAIL_USER=your-email@example.com
-   EMAIL_PASS=your-app-password
-   ```
+```bash
+npm run dev:web
+```
 
-### Running the Project
+## Default Local Ports
 
-1. **Start the Backend (from `server/`):**
-   ```bash
-   npm run dev
-   ```
-2. **Start the Frontend (from `client/`):**
-   ```bash
-   npm start
-   ```
+1. Web: `http://localhost:3500`
+2. API: `http://localhost:5001/health`
+3. MySQL: `localhost:3306`
+4. Redis: `localhost:6379`
 
-- **Registration Portal:** [http://localhost:3000](http://localhost:3000)
-- **API Server:** [http://localhost:5001](http://localhost:5001)
+## Notes
 
-## 📊 Deployment Note
-
-This system is designed to run on a local laptop or a simple VPS. Ensure the `uploads/` directory has write permissions for badge and QR code generation to function correctly.
-
-## 📄 License
-
-Internal Project - All Rights Reserved.
+1. This is a clean rewrite baseline and intentionally excludes legacy implementation code.
+2. Use sprint documents in `sprints/` as execution guides.
