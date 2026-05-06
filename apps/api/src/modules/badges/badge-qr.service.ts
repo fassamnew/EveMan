@@ -8,6 +8,7 @@ import { AuditOutcome } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { PrismaService } from '../../infra/db/prisma.service';
+import { getSystemQueue } from '../../infra/queue/queue.provider';
 import { AuditService } from '../common/audit.service';
 
 type QrPayload = {
@@ -131,12 +132,24 @@ export class BadgeQrService {
         registrationLinkId: registrant.registrationLinkId,
         badgeTemplateId: registrant.registrationLink.badgeTemplateId,
         qrCodeId: qrCode.id,
-        status: 'READY',
-        storagePath: `badges/${registrant.eventId}/${registrant.id}.txt`,
-        renderedAt: new Date(),
-        deliveredAt: new Date()
+        status: 'PENDING'
       }
     });
+
+    const queue = getSystemQueue();
+    await queue.add(
+      'badge.render',
+      { badgeId: badge.id },
+      {
+        attempts: 3,
+        backoff: {
+          type: 'exponential',
+          delay: 1000
+        },
+        removeOnComplete: 100,
+        removeOnFail: 100
+      }
+    );
 
     await this.audit.write({
       actorUserId: null,
@@ -193,12 +206,28 @@ export class BadgeQrService {
     const updated = await this.prisma.badge.update({
       where: { id: latest.id },
       data: {
-        status: 'READY',
-        renderedAt: new Date(),
-        deliveredAt: new Date(),
+        status: 'PENDING',
+        renderedAt: null,
+        deliveredAt: null,
+        storagePath: null,
         failureReason: null
       }
     });
+
+    const queue = getSystemQueue();
+    await queue.add(
+      'badge.render',
+      { badgeId: updated.id },
+      {
+        attempts: 3,
+        backoff: {
+          type: 'exponential',
+          delay: 1000
+        },
+        removeOnComplete: 100,
+        removeOnFail: 100
+      }
+    );
 
     return {
       badgeId: updated.id,

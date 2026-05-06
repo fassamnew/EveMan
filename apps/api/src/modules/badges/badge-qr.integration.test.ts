@@ -126,6 +126,30 @@ describe.skipIf(!runIntegration)('Badge QR integration (MySQL)', () => {
     await ensureSystemRoles();
   });
 
+  async function waitForBadgeReady(badgeId: string): Promise<{ status: string; storagePath: string | null }> {
+    for (let i = 0; i < 25; i += 1) {
+      const badge = await prisma.badge.findUnique({
+        where: { id: badgeId },
+        select: {
+          status: true,
+          storagePath: true
+        }
+      });
+
+      if (!badge) {
+        throw new Error('Badge missing while waiting for render completion');
+      }
+
+      if (badge.status === 'READY' || badge.status === 'FAILED') {
+        return badge;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 80));
+    }
+
+    throw new Error('Timed out waiting for badge render completion');
+  }
+
   it('assigns templates, issues qr-backed badge, and verifies qr token', async () => {
     const org = await prisma.organization.create({ data: { name: 'Acme', code: 'acme' } });
 
@@ -198,8 +222,12 @@ describe.skipIf(!runIntegration)('Badge QR integration (MySQL)', () => {
     });
 
     const issued = await badgeQrService.issueForRegistrant({ registrantId: registrant.id });
-    expect(issued.status).toBe('READY');
+    expect(issued.status).toBe('PENDING');
     expect(typeof issued.qrToken).toBe('string');
+
+    const readyBadge = await waitForBadgeReady(issued.badgeId);
+    expect(readyBadge.status).toBe('READY');
+    expect(typeof readyBadge.storagePath).toBe('string');
 
     const verifyRes = await request(app.getHttpServer())
       .post('/verify/qr')
@@ -276,5 +304,67 @@ describe.skipIf(!runIntegration)('Badge QR integration (MySQL)', () => {
       (verifyRes.body as { reason?: string }).reason ||
       (verifyRes.body as { message?: { reason?: string } }).message?.reason;
     expect(reason).toBe('TOKEN_REVOKED');
+  });
+
+  it('queues regeneration and renders badge again', async () => {
+    const org = await prisma.organization.create({ data: { name: 'Regens', code: 'regens' } });
+
+    await createOrgUser({
+      email: 'admin@regens.com',
+      password: 'StrongPass123!',
+      orgId: org.id,
+      roleName: 'ORG_ADMIN'
+    });
+
+    const auth = await loginOrgUser({
+      email: 'admin@regens.com',
+      password: 'StrongPass123!',
+      orgId: org.id
+    });
+
+    const event = await prisma.event.create({
+      data: {
+        organizationId: org.id,
+        name: 'Regens Event',
+        status: 'PUBLISHED'
+      }
+    });
+
+    const link = await prisma.registrationLink.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        slug: 'regens-2026',
+        title: 'Regens Registration'
+      }
+    });
+
+    const registrant = await prisma.registrant.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        registrationLinkId: link.id,
+        referenceCode: 'REGEN123',
+        email: 'regen@example.com',
+        fullName: 'Re Gen',
+        consentAccepted: true,
+        consentPolicyVersion: 'v1',
+        consentCapturedAt: new Date()
+      }
+    });
+
+    const issued = await badgeQrService.issueForRegistrant({ registrantId: registrant.id });
+    await waitForBadgeReady(issued.badgeId);
+
+    const regenRes = await request(app.getHttpServer())
+      .patch(`/org/${org.code}/registrants/${registrant.id}/badge/regenerate`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({});
+
+    expect(regenRes.status).toBe(200);
+    expect(regenRes.body.status).toBe('PENDING');
+
+    const readyAgain = await waitForBadgeReady(regenRes.body.badgeId as string);
+    expect(readyAgain.status).toBe('READY');
   });
 });
