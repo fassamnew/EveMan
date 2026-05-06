@@ -35,6 +35,15 @@ enum LinkApprovalMode {
   MANUAL
 }
 
+enum FormFieldType {
+  TEXT
+  TEXTAREA
+  EMAIL
+  NUMBER
+  SELECT
+  CHECKBOX
+}
+
 model MigrationMetadata {
   id        String   @id @default(uuid())
   key       String   @unique
@@ -58,6 +67,7 @@ model Organization {
   auditLogs  AuditLog[]
   events     Event[]
   registrationLinks RegistrationLink[]
+  registrants Registrant[]
 
   @@map("organizations")
 }
@@ -181,6 +191,7 @@ model Event {
   updatedAt      DateTime           @updatedAt
   organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   links          RegistrationLink[]
+  registrants    Registrant[]
 
   @@index([organizationId, createdAt])
   @@map("events")
@@ -198,6 +209,8 @@ model RegistrationLink {
   event          Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
   organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   rule           LinkRule?
+  formFields     FormField[]
+  registrants    Registrant[]
 
   @@unique([eventId, slug])
   @@index([organizationId, slug])
@@ -218,4 +231,70 @@ model LinkRule {
 
   @@index([visibility, opensAt, closesAt])
   @@map("link_rules")
+}
+
+model FormField {
+  id                 String          @id @default(uuid())
+  registrationLinkId String
+  key                String
+  label              String
+  type               FormFieldType
+  required           Boolean         @default(true)
+  position           Int             @default(0)
+  placeholder        String?
+  optionsJson        Json?
+  minLength          Int?
+  maxLength          Int?
+  minValue           Float?
+  maxValue           Float?
+  pattern            String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  registrationLink   RegistrationLink @relation(fields: [registrationLinkId], references: [id], onDelete: Cascade)
+  responses          RegistrantResponse[]
+
+  @@unique([registrationLinkId, key])
+  @@index([registrationLinkId, position])
+  @@map("form_fields")
+}
+
+model Registrant {
+  id                   String            @id @default(uuid())
+  organizationId       String
+  eventId              String
+  registrationLinkId   String
+  referenceCode        String            @unique
+  email                String
+  fullName             String
+  consentAccepted      Boolean           @default(false)
+  consentPolicyVersion String
+  consentCapturedAt    DateTime
+  confirmationSentAt   DateTime?
+  ipAddress            String?
+  userAgent            String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  organization         Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  event                Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  registrationLink     RegistrationLink  @relation(fields: [registrationLinkId], references: [id], onDelete: Cascade)
+  responses            RegistrantResponse[]
+
+  @@unique([registrationLinkId, email])
+  @@index([eventId, createdAt])
+  @@map("registrants")
+}
+
+model RegistrantResponse {
+  id           String      @id @default(uuid())
+  registrantId String
+  formFieldId  String?
+  fieldKey     String
+  valueText    String
+  createdAt    DateTime    @default(now())
+  registrant   Registrant  @relation(fields: [registrantId], references: [id], onDelete: Cascade)
+  formField    FormField?  @relation(fields: [formFieldId], references: [id], onDelete: SetNull)
+
+  @@unique([registrantId, fieldKey])
+  @@index([formFieldId])
+  @@map("registrant_responses")
 }

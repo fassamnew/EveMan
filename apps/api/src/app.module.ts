@@ -18,12 +18,21 @@ import { SuperAdminGuard } from './modules/common/guards/super-admin.guard';
 import { OrgAccessGuard } from './modules/common/guards/org-access.guard';
 import { AuthRateLimitGuard } from './modules/common/guards/auth-rate-limit.guard';
 import { ManagementRateLimitGuard } from './modules/common/guards/management-rate-limit.guard';
+import { PublicRegistrationRateLimitGuard } from './modules/common/guards/public-registration-rate-limit.guard';
 import { tenantContextMiddleware } from './modules/common/tenant-context.middleware';
 import { IdentityBootstrapService } from './modules/organizations/identity-bootstrap.service';
+import { RegistrationsController } from './modules/registrations/registrations.controller';
+import { RegistrationsService } from './modules/registrations/registrations.service';
 
 @Module({
   imports: [],
-  controllers: [HealthController, AuthController, OrganizationsController, EventsController],
+  controllers: [
+    HealthController,
+    AuthController,
+    OrganizationsController,
+    EventsController,
+    RegistrationsController
+  ],
   providers: [
     PrismaService,
     AuditService,
@@ -34,11 +43,13 @@ import { IdentityBootstrapService } from './modules/organizations/identity-boots
     AuthService,
     OrganizationsService,
     EventsService,
+    RegistrationsService,
     AccessTokenGuard,
     SuperAdminGuard,
     OrgAccessGuard,
     AuthRateLimitGuard,
     ManagementRateLimitGuard,
+    PublicRegistrationRateLimitGuard,
     IdentityBootstrapService
   ]
 })
