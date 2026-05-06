@@ -22,6 +22,11 @@ export default function OrgEventsPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  function inputValue(id: string): string {
+    const input = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
+    return input?.value || '';
+  }
+
   async function fetchEvents(): Promise<void> {
     const session = loadSession();
     if (!session) {
@@ -95,6 +100,69 @@ export default function OrgEventsPage() {
     }
   }
 
+  async function onUpdateEvent(eventId: string) {
+    const session = loadSession();
+    if (!session) {
+      return;
+    }
+
+    setError(null);
+    const nameValue = inputValue(`event-name-${eventId}`);
+    const statusValue = inputValue(`event-status-${eventId}`);
+
+    try {
+      const response = await fetch(`${API_BASE}/org/${orgCode}/events/${eventId}`, {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+          Authorization: `Bearer ${session.accessToken}`
+        },
+        body: JSON.stringify({
+          name: nameValue,
+          status: statusValue
+        })
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { message?: string };
+        setError(payload.message || 'Failed to update event');
+        return;
+      }
+
+      await fetchEvents();
+    } catch {
+      setError('Network error while updating event');
+    }
+  }
+
+  async function onArchiveEvent(eventId: string) {
+    const session = loadSession();
+    if (!session) {
+      return;
+    }
+
+    setError(null);
+
+    try {
+      const response = await fetch(`${API_BASE}/org/${orgCode}/events/${eventId}/archive`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.accessToken}`
+        }
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { message?: string };
+        setError(payload.message || 'Failed to archive event');
+        return;
+      }
+
+      await fetchEvents();
+    } catch {
+      setError('Network error while archiving event');
+    }
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100">
       <div className="mx-auto max-w-5xl">
@@ -136,18 +204,49 @@ export default function OrgEventsPage() {
           {!isLoading && events.length > 0 ? (
             <ul>
               {events.map(item => (
-                <li key={item.id} className="flex items-center justify-between border-t border-slate-800 px-4 py-3 text-sm">
-                  <div>
-                    <p className="font-medium">{item.name}</p>
-                    <p className="text-slate-400">{item.status}</p>
+                <li key={item.id} className="border-t border-slate-800 px-4 py-3 text-sm">
+                  <div className="grid gap-3 md:grid-cols-[2fr_1fr_1fr_auto_auto_auto] md:items-center">
+                    <input
+                      id={`event-name-${item.id}`}
+                      defaultValue={item.name}
+                      className="rounded border border-slate-700 bg-slate-950 px-2 py-1"
+                    />
+                    <select
+                      id={`event-status-${item.id}`}
+                      defaultValue={item.status}
+                      className="rounded border border-slate-700 bg-slate-950 px-2 py-1"
+                      disabled={item.status === 'ARCHIVED'}
+                    >
+                      <option value="DRAFT">DRAFT</option>
+                      <option value="PUBLISHED">PUBLISHED</option>
+                    </select>
+                    <p className="text-xs text-slate-400">
+                      Created {new Date(item.createdAt).toLocaleString()}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void onUpdateEvent(item.id)}
+                      disabled={item.status === 'ARCHIVED'}
+                      className="rounded-md border border-cyan-500 px-3 py-1 text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void onArchiveEvent(item.id)}
+                      disabled={item.status === 'ARCHIVED'}
+                      className="rounded-md border border-amber-400 px-3 py-1 text-amber-200 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Archive
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/o/${orgCode}/events/${item.id}/links`)}
+                      className="rounded-md border border-slate-700 px-3 py-1"
+                    >
+                      Manage links
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => router.push(`/o/${orgCode}/events/${item.id}/links`)}
-                    className="rounded-md border border-slate-700 px-3 py-1"
-                  >
-                    Manage links
-                  </button>
                 </li>
               ))}
             </ul>

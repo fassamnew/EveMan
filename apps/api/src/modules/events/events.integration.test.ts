@@ -187,6 +187,36 @@ describe.skipIf(!runIntegration)('Events integration (MySQL)', () => {
     expect(Array.isArray(linksListRes.body)).toBe(true);
     expect(linksListRes.body.length).toBe(1);
 
+    const linkId = linksListRes.body[0].id as string;
+    const updateLinkRes = await request(app.getHttpServer())
+      .patch(`/org/${org.code}/events/${eventId}/links/${linkId}`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({
+        title: 'VIP Registration Updated',
+        visibility: 'PRIVATE',
+        approvalMode: 'MANUAL',
+        capacity: 80
+      });
+
+    expect(updateLinkRes.status).toBe(200);
+    expect(updateLinkRes.body.title).toBe('VIP Registration Updated');
+    expect(updateLinkRes.body.rule.visibility).toBe('PRIVATE');
+
+    const deleteLinkRes = await request(app.getHttpServer())
+      .delete(`/org/${org.code}/events/${eventId}/links/${linkId}`)
+      .set('Authorization', `Bearer ${auth.accessToken}`);
+
+    expect(deleteLinkRes.status).toBe(200);
+    expect(deleteLinkRes.body.deleted).toBe(true);
+
+    const linksAfterDeleteRes = await request(app.getHttpServer())
+      .get(`/org/${org.code}/events/${eventId}/links`)
+      .set('Authorization', `Bearer ${auth.accessToken}`);
+
+    expect(linksAfterDeleteRes.status).toBe(200);
+    expect(Array.isArray(linksAfterDeleteRes.body)).toBe(true);
+    expect(linksAfterDeleteRes.body).toHaveLength(0);
+
     const archiveRes = await request(app.getHttpServer())
       .post(`/org/${org.code}/events/${eventId}/archive`)
       .set('Authorization', `Bearer ${auth.accessToken}`)
@@ -260,5 +290,73 @@ describe.skipIf(!runIntegration)('Events integration (MySQL)', () => {
     expect(metadataRes.body.linkId).toBe(link.id);
     expect(metadataRes.body.effectiveRules.visibility).toBe('PUBLIC');
     expect(typeof metadataRes.body.effectiveRules.isOpen).toBe('boolean');
+
+    const invalidSlugRes = await request(app.getHttpServer()).get(
+      `/public/o/${org.code}/events/${event.id}/links/INVALID_SLUG!`
+    );
+    expect(invalidSlugRes.status).toBe(400);
+  });
+
+  it('validates conflicting capacities and date windows', async () => {
+    const org = await prisma.organization.create({
+      data: { name: 'Orbit Org', code: 'orbit' }
+    });
+
+    await createOrgUser({
+      email: 'admin@orbit.com',
+      password: 'StrongPass123!',
+      orgId: org.id,
+      roleName: 'ORG_ADMIN'
+    });
+
+    const auth = await loginOrgUser({
+      email: 'admin@orbit.com',
+      password: 'StrongPass123!',
+      orgId: org.id
+    });
+
+    const invalidEventWindowRes = await request(app.getHttpServer())
+      .post(`/org/${org.code}/events`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({
+        name: 'Orbit Summit',
+        startsAt: '2026-10-12T10:00:00.000Z',
+        endsAt: '2026-10-11T10:00:00.000Z'
+      });
+
+    expect(invalidEventWindowRes.status).toBe(400);
+
+    const createEventRes = await request(app.getHttpServer())
+      .post(`/org/${org.code}/events`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({
+        name: 'Orbit Summit'
+      });
+
+    expect(createEventRes.status).toBe(201);
+    const eventId = createEventRes.body.id as string;
+
+    const invalidCapacityRes = await request(app.getHttpServer())
+      .post(`/org/${org.code}/events/${eventId}/links`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({
+        title: 'General',
+        slug: 'general',
+        capacity: 0
+      });
+
+    expect(invalidCapacityRes.status).toBe(400);
+
+    const invalidLinkWindowRes = await request(app.getHttpServer())
+      .post(`/org/${org.code}/events/${eventId}/links`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({
+        title: 'VIP',
+        slug: 'vip',
+        opensAt: '2026-10-12T10:00:00.000Z',
+        closesAt: '2026-10-11T10:00:00.000Z'
+      });
+
+    expect(invalidLinkWindowRes.status).toBe(400);
   });
 });

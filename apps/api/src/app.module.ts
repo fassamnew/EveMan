@@ -17,6 +17,7 @@ import { AccessTokenGuard } from './modules/common/guards/access-token.guard';
 import { SuperAdminGuard } from './modules/common/guards/super-admin.guard';
 import { OrgAccessGuard } from './modules/common/guards/org-access.guard';
 import { AuthRateLimitGuard } from './modules/common/guards/auth-rate-limit.guard';
+import { ManagementRateLimitGuard } from './modules/common/guards/management-rate-limit.guard';
 import { tenantContextMiddleware } from './modules/common/tenant-context.middleware';
 import { IdentityBootstrapService } from './modules/organizations/identity-bootstrap.service';
 
@@ -37,6 +38,7 @@ import { IdentityBootstrapService } from './modules/organizations/identity-boots
     SuperAdminGuard,
     OrgAccessGuard,
     AuthRateLimitGuard,
+    ManagementRateLimitGuard,
     IdentityBootstrapService
   ]
 })

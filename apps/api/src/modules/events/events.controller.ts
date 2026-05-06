@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Inject, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { EventsService } from './events.service';
 import { AccessTokenGuard } from '../common/guards/access-token.guard';
 import { OrgAccessGuard } from '../common/guards/org-access.guard';
+import { ManagementRateLimitGuard } from '../common/guards/management-rate-limit.guard';
 import type { RequestWithAuth } from '../common/request-with-auth';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
@@ -12,7 +13,7 @@ import { UpdateLinkDto } from './dto/update-link.dto';
 export class EventsController {
   constructor(@Inject(EventsService) private readonly eventsService: EventsService) {}
 
-  @UseGuards(AccessTokenGuard, OrgAccessGuard)
+  @UseGuards(AccessTokenGuard, OrgAccessGuard, ManagementRateLimitGuard)
   @Post('org/:orgCode/events')
   async createEvent(
     @Param('orgCode') orgCode: string,
@@ -28,7 +29,7 @@ export class EventsController {
     return this.eventsService.listEvents(orgCode, req);
   }
 
-  @UseGuards(AccessTokenGuard, OrgAccessGuard)
+  @UseGuards(AccessTokenGuard, OrgAccessGuard, ManagementRateLimitGuard)
   @Patch('org/:orgCode/events/:eventId')
   async updateEvent(
     @Param('orgCode') orgCode: string,
@@ -39,7 +40,7 @@ export class EventsController {
     return this.eventsService.updateEvent(orgCode, eventId, dto, req);
   }
 
-  @UseGuards(AccessTokenGuard, OrgAccessGuard)
+  @UseGuards(AccessTokenGuard, OrgAccessGuard, ManagementRateLimitGuard)
   @Post('org/:orgCode/events/:eventId/archive')
   async archiveEvent(
     @Param('orgCode') orgCode: string,
@@ -49,7 +50,7 @@ export class EventsController {
     return this.eventsService.archiveEvent(orgCode, eventId, req);
   }
 
-  @UseGuards(AccessTokenGuard, OrgAccessGuard)
+  @UseGuards(AccessTokenGuard, OrgAccessGuard, ManagementRateLimitGuard)
   @Post('org/:orgCode/events/:eventId/links')
   async createLink(
     @Param('orgCode') orgCode: string,
@@ -70,7 +71,7 @@ export class EventsController {
     return this.eventsService.listLinks(orgCode, eventId, req);
   }
 
-  @UseGuards(AccessTokenGuard, OrgAccessGuard)
+  @UseGuards(AccessTokenGuard, OrgAccessGuard, ManagementRateLimitGuard)
   @Patch('org/:orgCode/events/:eventId/links/:linkId')
   async updateLink(
     @Param('orgCode') orgCode: string,
@@ -80,6 +81,17 @@ export class EventsController {
     @Req() req: RequestWithAuth
   ) {
     return this.eventsService.updateLink(orgCode, eventId, linkId, dto, req);
+  }
+
+  @UseGuards(AccessTokenGuard, OrgAccessGuard, ManagementRateLimitGuard)
+  @Delete('org/:orgCode/events/:eventId/links/:linkId')
+  async deleteLink(
+    @Param('orgCode') orgCode: string,
+    @Param('eventId') eventId: string,
+    @Param('linkId') linkId: string,
+    @Req() req: RequestWithAuth
+  ) {
+    return this.eventsService.deleteLink(orgCode, eventId, linkId, req);
   }
 
   @Get('public/o/:orgCode/events/:eventId/links/:slug')

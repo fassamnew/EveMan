@@ -15,6 +15,8 @@ import type { UpdateEventDto } from './dto/update-event.dto';
 import type { CreateLinkDto } from './dto/create-link.dto';
 import type { UpdateLinkDto } from './dto/update-link.dto';
 
+const LINK_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 @Injectable()
 export class EventsService {
   constructor(
@@ -55,6 +57,72 @@ export class EventsService {
     if (new Date(opensAt).getTime() > new Date(closesAt).getTime()) {
       throw new BadRequestException('Link opensAt cannot be after closesAt');
     }
+  }
+
+  private validateLinkCapacity(capacity?: number | null): void {
+    if (capacity === undefined || capacity === null) {
+      return;
+    }
+
+    if (!Number.isInteger(capacity) || capacity < 1) {
+      throw new BadRequestException('Link capacity must be an integer greater than 0');
+    }
+  }
+
+  private isUniqueConstraintError(error: unknown): boolean {
+    if (error && typeof error === 'object' && 'code' in error) {
+      return (error as { code?: string }).code === 'P2002';
+    }
+
+    return error instanceof Error && error.message.includes('Unique constraint failed');
+  }
+
+  private normalizeSlugBase(slug: string): string {
+    const normalized = slug
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .replace(/-{2,}/g, '-');
+
+    return normalized || 'link';
+  }
+
+  private async buildSlugSuggestions(
+    organizationId: string,
+    eventId: string,
+    attemptedSlug: string
+  ): Promise<string[]> {
+    const base = this.normalizeSlugBase(attemptedSlug);
+    const existing = await this.prisma.registrationLink.findMany({
+      where: {
+        organizationId,
+        eventId,
+        slug: {
+          startsWith: base
+        }
+      },
+      select: {
+        slug: true
+      }
+    });
+
+    const taken = new Set(existing.map(item => item.slug));
+    const suggestions: string[] = [];
+
+    if (!taken.has(base)) {
+      suggestions.push(base);
+    }
+
+    let suffix = 1;
+    while (suggestions.length < 3) {
+      const candidate = `${base}-${suffix}`;
+      if (!taken.has(candidate)) {
+        suggestions.push(candidate);
+      }
+      suffix += 1;
+    }
+
+    return suggestions;
   }
 
   private async getOrganizationByCode(orgCode: string): Promise<{ id: string; code: string }> {
@@ -195,6 +263,7 @@ export class EventsService {
   async createLink(orgCode: string, eventId: string, dto: CreateLinkDto, req: RequestWithAuth) {
     this.assertEventWritePermission(orgCode, req);
     this.validateLinkWindow(dto.opensAt, dto.closesAt);
+    this.validateLinkCapacity(dto.capacity);
 
     const org = await this.getOrganizationByCode(orgCode);
     const event = await this.prisma.event.findFirst({
@@ -242,8 +311,12 @@ export class EventsService {
 
       return created;
     } catch (error) {
-      if (error instanceof Error && error.message.includes('Unique constraint failed')) {
-        throw new BadRequestException('Link slug must be unique for the event');
+      if (this.isUniqueConstraintError(error)) {
+        const suggestions = await this.buildSlugSuggestions(org.id, event.id, dto.slug);
+        throw new BadRequestException({
+          message: 'Link slug must be unique for the event',
+          suggestions
+        });
       }
       throw error;
     }
@@ -287,6 +360,7 @@ export class EventsService {
   ) {
     this.assertEventWritePermission(orgCode, req);
     this.validateLinkWindow(dto.opensAt, dto.closesAt);
+    this.validateLinkCapacity(dto.capacity);
 
     const org = await this.getOrganizationByCode(orgCode);
 
@@ -348,14 +422,58 @@ export class EventsService {
 
       return updated;
     } catch (error) {
-      if (error instanceof Error && error.message.includes('Unique constraint failed')) {
-        throw new BadRequestException('Link slug must be unique for the event');
+      if (this.isUniqueConstraintError(error)) {
+        const suggestions = await this.buildSlugSuggestions(org.id, eventId, dto.slug || link.slug);
+        throw new BadRequestException({
+          message: 'Link slug must be unique for the event',
+          suggestions
+        });
       }
       throw error;
     }
   }
 
+  async deleteLink(orgCode: string, eventId: string, linkId: string, req: RequestWithAuth) {
+    this.assertEventWritePermission(orgCode, req);
+
+    const org = await this.getOrganizationByCode(orgCode);
+    const link = await this.prisma.registrationLink.findFirst({
+      where: {
+        id: linkId,
+        eventId,
+        organizationId: org.id
+      }
+    });
+
+    if (!link) {
+      throw new NotFoundException('Registration link not found');
+    }
+
+    const deleted = await this.prisma.registrationLink.delete({
+      where: { id: link.id }
+    });
+
+    await this.audit.write({
+      actorUserId: req.auth?.userId || null,
+      organizationId: org.id,
+      action: 'LINK_DELETE',
+      targetType: 'REGISTRATION_LINK',
+      targetId: deleted.id,
+      outcome: AuditOutcome.SUCCESS,
+      ipAddress: this.getClientIp(req)
+    });
+
+    return {
+      id: deleted.id,
+      deleted: true
+    };
+  }
+
   async getPublicLinkMetadata(orgCode: string, eventId: string, slug: string) {
+    if (!LINK_SLUG_PATTERN.test(slug)) {
+      throw new BadRequestException('Invalid link slug format');
+    }
+
     const org = await this.getOrganizationByCode(orgCode);
 
     const link = await this.prisma.registrationLink.findFirst({

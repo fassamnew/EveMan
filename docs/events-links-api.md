@@ -11,7 +11,8 @@ This document defines the Phase 2 event and registration-link API contract.
 5. `POST /org/:orgCode/events/:eventId/links`
 6. `GET /org/:orgCode/events/:eventId/links`
 7. `PATCH /org/:orgCode/events/:eventId/links/:linkId`
-8. `GET /public/o/:orgCode/events/:eventId/links/:slug`
+8. `DELETE /org/:orgCode/events/:eventId/links/:linkId`
+9. `GET /public/o/:orgCode/events/:eventId/links/:slug`
 
 ## Event Create Request
 
@@ -57,15 +58,18 @@ This document defines the Phase 2 event and registration-link API contract.
 
 1. `slug` must match `^[a-z0-9]+(?:-[a-z0-9]+)*$`.
 2. Link slug is unique per event (`eventId + slug`).
-3. `opensAt` cannot be after `closesAt`.
-4. Event `startsAt` cannot be after `endsAt`.
+3. Duplicate slug responses include fallback slug suggestions in `suggestions`.
+4. `opensAt` cannot be after `closesAt`.
+5. Event `startsAt` cannot be after `endsAt`.
+6. Public metadata slug path parameters are validated with the same slug regex.
 
 ## Security and Tenancy Rules
 
 1. All management routes are tenant-scoped (`/org/:orgCode/...`).
 2. `ORG_ADMIN` or `SUPER_ADMIN` can mutate event/link settings.
 3. `ORG_STAFF` can read tenant data but cannot mutate event/link settings.
-4. All event/link mutations are audited (`EVENT_CREATE`, `EVENT_UPDATE`, `EVENT_ARCHIVE`, `LINK_CREATE`, `LINK_UPDATE`).
+4. All event/link mutations are audited (`EVENT_CREATE`, `EVENT_UPDATE`, `EVENT_ARCHIVE`, `LINK_CREATE`, `LINK_UPDATE`, `LINK_DELETE`).
+5. Management APIs are rate limited via `ManagementRateLimitGuard`.
 
 ## Public Metadata Endpoint
 
