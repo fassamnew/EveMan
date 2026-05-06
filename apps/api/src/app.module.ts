@@ -24,6 +24,8 @@ import { tenantContextMiddleware } from './modules/common/tenant-context.middlew
 import { IdentityBootstrapService } from './modules/organizations/identity-bootstrap.service';
 import { RegistrationsController } from './modules/registrations/registrations.controller';
 import { RegistrationsService } from './modules/registrations/registrations.service';
+import { BadgeQrController } from './modules/badges/badge-qr.controller';
+import { BadgeQrService } from './modules/badges/badge-qr.service';
 
 @Module({
   imports: [],
@@ -32,7 +34,8 @@ import { RegistrationsService } from './modules/registrations/registrations.serv
     AuthController,
     OrganizationsController,
     EventsController,
-    RegistrationsController
+    RegistrationsController,
+    BadgeQrController
   ],
   providers: [
     PrismaService,
@@ -46,6 +49,7 @@ import { RegistrationsService } from './modules/registrations/registrations.serv
     OrganizationsService,
     EventsService,
     RegistrationsService,
+    BadgeQrService,
     AccessTokenGuard,
     SuperAdminGuard,
     OrgAccessGuard,

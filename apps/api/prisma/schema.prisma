@@ -44,6 +44,21 @@ enum FormFieldType {
   CHECKBOX
 }
 
+enum BadgeStatus {
+  PENDING
+  RENDERING
+  READY
+  FAILED
+  REVOKED
+}
+
+enum QrTokenStatus {
+  ACTIVE
+  VERIFIED
+  REVOKED
+  EXPIRED
+}
+
 model MigrationMetadata {
   id        String   @id @default(uuid())
   key       String   @unique
@@ -68,6 +83,9 @@ model Organization {
   events     Event[]
   registrationLinks RegistrationLink[]
   registrants Registrant[]
+  badgeTemplates BadgeTemplate[]
+  badges Badge[]
+  qrCodes QrCode[]
 
   @@map("organizations")
 }
@@ -192,6 +210,8 @@ model Event {
   organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   links          RegistrationLink[]
   registrants    Registrant[]
+  badges         Badge[]
+  qrCodes        QrCode[]
 
   @@index([organizationId, createdAt])
   @@map("events")
@@ -211,9 +231,13 @@ model RegistrationLink {
   rule           LinkRule?
   formFields     FormField[]
   registrants    Registrant[]
+  badgeTemplateId String?
+  badgeTemplate  BadgeTemplate? @relation(fields: [badgeTemplateId], references: [id], onDelete: SetNull)
+  badges         Badge[]
 
   @@unique([eventId, slug])
   @@index([organizationId, slug])
+  @@index([badgeTemplateId])
   @@map("registration_links")
 }
 
@@ -278,6 +302,8 @@ model Registrant {
   event                Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
   registrationLink     RegistrationLink  @relation(fields: [registrationLinkId], references: [id], onDelete: Cascade)
   responses            RegistrantResponse[]
+  qrCodes              QrCode[]
+  badges               Badge[]
 
   @@unique([registrationLinkId, email])
   @@index([eventId, createdAt])
@@ -297,4 +323,71 @@ model RegistrantResponse {
   @@unique([registrantId, fieldKey])
   @@index([formFieldId])
   @@map("registrant_responses")
+}
+
+model BadgeTemplate {
+  id             String            @id @default(uuid())
+  organizationId String
+  name           String
+  version        Int               @default(1)
+  configJson     Json
+  isActive       Boolean           @default(true)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  links          RegistrationLink[]
+  badges         Badge[]
+
+  @@unique([organizationId, name, version])
+  @@index([organizationId, isActive])
+  @@map("badge_templates")
+}
+
+model QrCode {
+  id             String        @id @default(uuid())
+  registrantId   String
+  organizationId String
+  eventId        String
+  tokenHash      String?       @unique
+  status         QrTokenStatus @default(ACTIVE)
+  expiresAt      DateTime?
+  lastVerifiedAt DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  registrant     Registrant    @relation(fields: [registrantId], references: [id], onDelete: Cascade)
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  event          Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  badges         Badge[]
+
+  @@index([organizationId, status])
+  @@index([eventId, status])
+  @@map("qr_codes")
+}
+
+model Badge {
+  id                 String         @id @default(uuid())
+  registrantId       String
+  organizationId     String
+  eventId            String
+  registrationLinkId String
+  badgeTemplateId    String?
+  qrCodeId           String?
+  status             BadgeStatus    @default(PENDING)
+  storagePath        String?
+  renderedAt         DateTime?
+  deliveredAt        DateTime?
+  failureReason      String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  registrant         Registrant     @relation(fields: [registrantId], references: [id], onDelete: Cascade)
+  organization       Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  event              Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  registrationLink   RegistrationLink @relation(fields: [registrationLinkId], references: [id], onDelete: Cascade)
+  badgeTemplate      BadgeTemplate? @relation(fields: [badgeTemplateId], references: [id], onDelete: SetNull)
+  qrCode             QrCode?        @relation(fields: [qrCodeId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@index([registrantId, createdAt])
+  @@index([qrCodeId])
+  @@map("badges")
 }
