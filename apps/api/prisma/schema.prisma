@@ -59,6 +59,36 @@ enum QrTokenStatus {
   EXPIRED
 }
 
+enum AttendeeLifecycleStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum CommunicationChannel {
+  EMAIL
+  SMS
+}
+
+enum CommunicationDeliveryStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+enum ImportJobStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ImportDuplicateStrategy {
+  SKIP
+  UPDATE
+  FLAG
+}
+
 model MigrationMetadata {
   id        String   @id @default(uuid())
   key       String   @unique
@@ -86,6 +116,9 @@ model Organization {
   badgeTemplates BadgeTemplate[]
   badges Badge[]
   qrCodes QrCode[]
+  communicationTemplates CommunicationTemplate[]
+  communicationLogs CommunicationLog[]
+  importJobs ImportJob[]
 
   @@map("organizations")
 }
@@ -106,6 +139,9 @@ model User {
   refreshTokens     RefreshToken[]
   invitesCreated    Invite[]       @relation("InviteCreatedBy")
   auditLogs         AuditLog[]     @relation("AuditActor")
+  communicationTemplatesCreated CommunicationTemplate[] @relation("CommunicationTemplateCreatedBy")
+  communicationLogsSent CommunicationLog[] @relation("CommunicationLogSender")
+  importJobsUploaded  ImportJob[]  @relation("ImportJobUploadedBy")
 
   @@map("users")
 }
@@ -294,6 +330,8 @@ model Registrant {
   consentPolicyVersion String
   consentCapturedAt    DateTime
   confirmationSentAt   DateTime?
+  lifecycleStatus      AttendeeLifecycleStatus @default(APPROVED)
+  lifecycleUpdatedAt   DateTime?
   ipAddress            String?
   userAgent            String?
   createdAt            DateTime          @default(now())
@@ -304,10 +342,94 @@ model Registrant {
   responses            RegistrantResponse[]
   qrCodes              QrCode[]
   badges               Badge[]
+  communicationLogs    CommunicationLog[]
 
   @@unique([registrationLinkId, email])
   @@index([eventId, createdAt])
   @@map("registrants")
+}
+
+model CommunicationTemplate {
+  id             String               @id @default(uuid())
+  organizationId String
+  name           String
+  channel        CommunicationChannel
+  subject        String?
+  body           String
+  isActive       Boolean              @default(true)
+  createdByUserId String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdByUser  User?                @relation("CommunicationTemplateCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  logs           CommunicationLog[]
+
+  @@unique([organizationId, name, channel])
+  @@index([organizationId, isActive])
+  @@map("communication_templates")
+}
+
+model CommunicationLog {
+  id                   String                     @id @default(uuid())
+  organizationId       String
+  registrantId         String?
+  templateId           String?
+  channel              CommunicationChannel
+  status               CommunicationDeliveryStatus @default(QUEUED)
+  senderUserId         String?
+  recipientAddress     String
+  providerMessageId    String?
+  errorMessage         String?
+  metadataJson         Json?
+  createdAt            DateTime                    @default(now())
+  sentAt               DateTime?
+  organization         Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  registrant           Registrant?                 @relation(fields: [registrantId], references: [id], onDelete: SetNull)
+  template             CommunicationTemplate?      @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  senderUser           User?                       @relation("CommunicationLogSender", fields: [senderUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([status, createdAt])
+  @@map("communication_logs")
+}
+
+model ImportJob {
+  id                String                  @id @default(uuid())
+  organizationId    String
+  uploadedByUserId  String?
+  sourceFilename    String
+  sourceFileType    String
+  status            ImportJobStatus         @default(QUEUED)
+  duplicateStrategy ImportDuplicateStrategy @default(SKIP)
+  mappingProfileJson Json?
+  totalRows         Int?
+  successfulRows    Int?
+  failedRows        Int?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  organization      Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  uploadedByUser    User?                   @relation("ImportJobUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  errors            ImportError[]
+
+  @@index([organizationId, createdAt])
+  @@index([status, createdAt])
+  @@map("import_jobs")
+}
+
+model ImportError {
+  id            String   @id @default(uuid())
+  importJobId   String
+  rowNumber     Int
+  columnName    String?
+  message       String
+  rawDataJson   Json?
+  createdAt     DateTime @default(now())
+  importJob     ImportJob @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+
+  @@index([importJobId, rowNumber])
+  @@map("import_errors")
 }
 
 model RegistrantResponse {

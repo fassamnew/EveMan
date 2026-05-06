@@ -26,6 +26,12 @@ import { RegistrationsController } from './modules/registrations/registrations.c
 import { RegistrationsService } from './modules/registrations/registrations.service';
 import { BadgeQrController } from './modules/badges/badge-qr.controller';
 import { BadgeQrService } from './modules/badges/badge-qr.service';
+import { AttendeesController } from './modules/attendees/attendees.controller';
+import { AttendeesService } from './modules/attendees/attendees.service';
+import { ImportsController } from './modules/imports/imports.controller';
+import { ImportsService } from './modules/imports/imports.service';
+import { CommunicationsController } from './modules/communications/communications.controller';
+import { CommunicationsService } from './modules/communications/communications.service';
 
 @Module({
   imports: [],
@@ -35,7 +41,10 @@ import { BadgeQrService } from './modules/badges/badge-qr.service';
     OrganizationsController,
     EventsController,
     RegistrationsController,
-    BadgeQrController
+    BadgeQrController,
+    AttendeesController,
+    ImportsController,
+    CommunicationsController
   ],
   providers: [
     PrismaService,
@@ -50,6 +59,9 @@ import { BadgeQrService } from './modules/badges/badge-qr.service';
     EventsService,
     RegistrationsService,
     BadgeQrService,
+    AttendeesService,
+    ImportsService,
+    CommunicationsService,
     AccessTokenGuard,
     SuperAdminGuard,
     OrgAccessGuard,

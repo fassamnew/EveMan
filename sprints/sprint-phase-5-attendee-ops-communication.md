@@ -31,6 +31,20 @@ Deliver organization-portal operational tools for attendee lifecycle management,
 7. Build bulk send API and queued delivery workers.
 8. Build organization portal UI for attendee ops, imports, and communications.
 
+## Implementation Status
+
+Completed in code and integration tests:
+1. Backlog item 1: schema and migration foundation for `communication_templates`, `communication_logs`, `import_jobs`, and `import_errors`.
+2. Backlog item 2: attendee listing API with filters and paging.
+3. Backlog item 3: attendee lifecycle actions for approve/reject/edit and resend badge.
+4. Backlog item 4: import API with mapping profile payload and queued processing.
+5. Backlog item 5: duplicate handling strategies (skip/update/flag) during imports.
+6. Backlog item 6: communication template CRUD for email and SMS content.
+7. Backlog item 7: bulk send API and queued delivery worker with failure simulation support.
+
+In progress:
+1. Backlog item 8: organization portal UI for attendee ops, imports, and communications.
+
 ## Security and Compliance Requirements
 
 1. Enforce export/import permission checks by role.

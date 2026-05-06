@@ -1,6 +1,7 @@
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { PrismaClient } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import { createBadgeSignedDownloadUrl, putBadgeArtifact } from '../storage/badge-storage.util';
 import {
   getBadgeRenderAlertThreshold,
@@ -111,6 +112,18 @@ function getRedisConnection(): IORedis {
   return redisConnection;
 }
 
+async function nextReferenceCode(prisma: PrismaClient): Promise<string> {
+  for (let i = 0; i < 8; i += 1) {
+    const value = Math.random().toString(36).slice(2, 10).toUpperCase();
+    const existing = await prisma.registrant.findUnique({ where: { referenceCode: value } });
+    if (!existing) {
+      return value;
+    }
+  }
+
+  throw new Error('Unable to generate unique reference code');
+}
+
 export function getSystemQueue(): Queue {
   if (systemQueue) {
     return systemQueue;
@@ -145,6 +158,187 @@ export function startSystemWorker(): Worker {
         console.log(
           `confirmation-email queued for ${payload.email} (${payload.referenceCode}) on ${payload.eventName}`
         );
+        return;
+      }
+
+      if (job.name === 'import.process') {
+        const payload = job.data as {
+          importJobId: string;
+          organizationId: string;
+          eventId: string;
+          registrationLinkId: string;
+          rows: Array<{ data: Record<string, unknown> }>;
+        };
+
+        const prisma = getWorkerPrisma();
+        const importJob = await prisma.importJob.findUnique({
+          where: { id: payload.importJobId }
+        });
+
+        if (!importJob) {
+          throw new Error('Import job not found');
+        }
+
+        const mapping = (importJob.mappingProfileJson || {}) as {
+          fullName?: string;
+          email?: string;
+        };
+
+        if (!mapping.fullName || !mapping.email) {
+          throw new Error('Invalid mapping profile');
+        }
+
+        await prisma.importJob.update({
+          where: { id: importJob.id },
+          data: {
+            status: 'PROCESSING',
+            startedAt: new Date()
+          }
+        });
+
+        let successfulRows = 0;
+        let failedRows = 0;
+
+        for (let i = 0; i < payload.rows.length; i += 1) {
+          const row = payload.rows[i];
+          const rowNumber = i + 1;
+          const fullName = String(row.data[mapping.fullName] || '').trim();
+          const email = String(row.data[mapping.email] || '')
+            .trim()
+            .toLowerCase();
+
+          if (!fullName || !email || !email.includes('@')) {
+            failedRows += 1;
+            await prisma.importError.create({
+              data: {
+                importJobId: importJob.id,
+                rowNumber,
+                message: 'Missing or invalid fullName/email mapped values',
+                rawDataJson: row.data as Prisma.InputJsonValue
+              }
+            });
+            continue;
+          }
+
+          const existing = await prisma.registrant.findFirst({
+            where: {
+              registrationLinkId: payload.registrationLinkId,
+              email
+            }
+          });
+
+          if (existing) {
+            if (importJob.duplicateStrategy === 'SKIP') {
+              continue;
+            }
+
+            if (importJob.duplicateStrategy === 'FLAG') {
+              failedRows += 1;
+              await prisma.importError.create({
+                data: {
+                  importJobId: importJob.id,
+                  rowNumber,
+                  message: 'Duplicate attendee detected',
+                  rawDataJson: row.data as Prisma.InputJsonValue
+                }
+              });
+              continue;
+            }
+
+            await prisma.registrant.update({
+              where: {
+                id: existing.id
+              },
+              data: {
+                fullName,
+                lifecycleUpdatedAt: new Date()
+              }
+            });
+            successfulRows += 1;
+            continue;
+          }
+
+          const referenceCode = await nextReferenceCode(prisma);
+          await prisma.registrant.create({
+            data: {
+              organizationId: payload.organizationId,
+              eventId: payload.eventId,
+              registrationLinkId: payload.registrationLinkId,
+              referenceCode,
+              email,
+              fullName,
+              lifecycleStatus: 'APPROVED',
+              lifecycleUpdatedAt: new Date(),
+              consentAccepted: true,
+              consentPolicyVersion: 'import-v1',
+              consentCapturedAt: new Date(),
+              confirmationSentAt: null,
+              ipAddress: null,
+              userAgent: null
+            }
+          });
+          successfulRows += 1;
+        }
+
+        await prisma.importJob.update({
+          where: { id: importJob.id },
+          data: {
+            status: failedRows > 0 ? 'FAILED' : 'COMPLETED',
+            totalRows: payload.rows.length,
+            successfulRows,
+            failedRows,
+            completedAt: new Date()
+          }
+        });
+
+        return;
+      }
+
+      if (job.name === 'communication.send') {
+        const payload = job.data as { communicationLogId: string };
+        const prisma = getWorkerPrisma();
+
+        const communication = await prisma.communicationLog.findUnique({
+          where: {
+            id: payload.communicationLogId
+          },
+          include: {
+            template: true
+          }
+        });
+
+        if (!communication) {
+          throw new Error('Communication log not found');
+        }
+
+        const shouldFail = communication.recipientAddress.includes('fail');
+
+        if (shouldFail) {
+          await prisma.communicationLog.update({
+            where: {
+              id: communication.id
+            },
+            data: {
+              status: 'FAILED',
+              errorMessage: 'Simulated provider failure'
+            }
+          });
+          throw new Error('Simulated provider failure');
+        }
+
+        await prisma.communicationLog.update({
+          where: {
+            id: communication.id
+          },
+          data: {
+            status: 'SENT',
+            sentAt: new Date(),
+            providerMessageId: `msg_${communication.id.slice(0, 8)}`,
+            errorMessage: null
+          }
+        });
+
+        console.log(`communication sent to ${communication.recipientAddress}`);
         return;
       }
 

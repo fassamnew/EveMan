@@ -5,7 +5,13 @@ import {
   Injectable,
   NotFoundException
 } from '@nestjs/common';
-import { AuditOutcome, FormFieldType, LinkVisibility } from '@prisma/client';
+import {
+  AttendeeLifecycleStatus,
+  AuditOutcome,
+  FormFieldType,
+  LinkApprovalMode,
+  LinkVisibility
+} from '@prisma/client';
 import type { Request } from 'express';
 import { PrismaService } from '../../infra/db/prisma.service';
 import { getSystemQueue } from '../../infra/queue/queue.provider';
@@ -32,6 +38,7 @@ type ActiveLink = {
   rule: {
     visibility: LinkVisibility;
     capacity: number | null;
+    approvalMode: LinkApprovalMode;
     opensAt: Date | null;
     closesAt: Date | null;
   } | null;
@@ -106,6 +113,7 @@ export class RegistrationsService {
           select: {
             visibility: true,
             capacity: true,
+            approvalMode: true,
             opensAt: true,
             closesAt: true
           }
@@ -394,6 +402,11 @@ export class RegistrationsService {
         consentAccepted: true,
         consentPolicyVersion: dto.consentPolicyVersion,
         consentCapturedAt: new Date(),
+        lifecycleStatus:
+          link.rule?.approvalMode === LinkApprovalMode.MANUAL
+            ? AttendeeLifecycleStatus.PENDING
+            : AttendeeLifecycleStatus.APPROVED,
+        lifecycleUpdatedAt: new Date(),
         confirmationSentAt: new Date(),
         ipAddress: req.ip || null,
         userAgent: req.get('user-agent') || null,
@@ -440,7 +453,8 @@ export class RegistrationsService {
 
     return {
       referenceCode: created.referenceCode,
-      status: 'CONFIRMED',
+      status:
+        created.lifecycleStatus === AttendeeLifecycleStatus.PENDING ? 'PENDING_APPROVAL' : 'CONFIRMED',
       confirmationQueued
     };
   }
