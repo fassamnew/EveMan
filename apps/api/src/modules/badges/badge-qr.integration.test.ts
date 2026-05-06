@@ -126,13 +126,20 @@ describe.skipIf(!runIntegration)('Badge QR integration (MySQL)', () => {
     await ensureSystemRoles();
   });
 
-  async function waitForBadgeReady(badgeId: string): Promise<{ status: string; storagePath: string | null }> {
-    for (let i = 0; i < 25; i += 1) {
+  async function waitForBadgeReady(badgeId: string): Promise<{
+    status: string;
+    storagePath: string | null;
+    deliveredAt: Date | null;
+    failureReason: string | null;
+  }> {
+    for (let i = 0; i < 80; i += 1) {
       const badge = await prisma.badge.findUnique({
         where: { id: badgeId },
         select: {
           status: true,
-          storagePath: true
+          storagePath: true,
+          deliveredAt: true,
+          failureReason: true
         }
       });
 
@@ -144,10 +151,29 @@ describe.skipIf(!runIntegration)('Badge QR integration (MySQL)', () => {
         return badge;
       }
 
-      await new Promise(resolve => setTimeout(resolve, 80));
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
 
     throw new Error('Timed out waiting for badge render completion');
+  }
+
+  async function waitForBadgeDelivered(badgeId: string): Promise<void> {
+    for (let i = 0; i < 60; i += 1) {
+      const badge = await prisma.badge.findUnique({
+        where: { id: badgeId },
+        select: {
+          deliveredAt: true
+        }
+      });
+
+      if (badge?.deliveredAt) {
+        return;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    throw new Error('Timed out waiting for badge delivery completion');
   }
 
   it('assigns templates, issues qr-backed badge, and verifies qr token', async () => {
@@ -228,6 +254,7 @@ describe.skipIf(!runIntegration)('Badge QR integration (MySQL)', () => {
     const readyBadge = await waitForBadgeReady(issued.badgeId);
     expect(readyBadge.status).toBe('READY');
     expect(typeof readyBadge.storagePath).toBe('string');
+    await waitForBadgeDelivered(issued.badgeId);
 
     const verifyRes = await request(app.getHttpServer())
       .post('/verify/qr')
@@ -322,6 +349,109 @@ describe.skipIf(!runIntegration)('Badge QR integration (MySQL)', () => {
 
     expect(disableRes.status).toBe(200);
     expect(disableRes.body.isActive).toBe(false);
+  });
+
+  it('moves final render failures to dead-letter and emits alert metrics', async () => {
+    const previousRoot = process.env.BADGE_STORAGE_ROOT;
+    const previousAlertThreshold = process.env.BADGE_RENDER_ALERT_FAILURE_STREAK;
+
+    process.env.BADGE_STORAGE_ROOT = '/dev/null';
+    process.env.BADGE_RENDER_ALERT_FAILURE_STREAK = '1';
+
+    try {
+      const org = await prisma.organization.create({ data: { name: 'Failcase', code: 'failcase' } });
+
+      await createOrgUser({
+        email: 'admin@failcase.com',
+        password: 'StrongPass123!',
+        orgId: org.id,
+        roleName: 'ORG_ADMIN'
+      });
+
+      const auth = await loginOrgUser({
+        email: 'admin@failcase.com',
+        password: 'StrongPass123!',
+        orgId: org.id
+      });
+
+      const event = await prisma.event.create({
+        data: {
+          organizationId: org.id,
+          name: 'Failure Event',
+          status: 'PUBLISHED'
+        }
+      });
+
+      const link = await prisma.registrationLink.create({
+        data: {
+          organizationId: org.id,
+          eventId: event.id,
+          slug: 'failure-link',
+          title: 'Failure Link'
+        }
+      });
+
+      const registrant = await prisma.registrant.create({
+        data: {
+          organizationId: org.id,
+          eventId: event.id,
+          registrationLinkId: link.id,
+          referenceCode: 'FAIL1234',
+          email: 'fail@example.com',
+          fullName: 'Fail Case',
+          consentAccepted: true,
+          consentPolicyVersion: 'v1',
+          consentCapturedAt: new Date()
+        }
+      });
+
+      const issued = await badgeQrService.issueForRegistrant({ registrantId: registrant.id });
+      const failedBadge = await waitForBadgeReady(issued.badgeId);
+
+      expect(failedBadge.status).toBe('FAILED');
+      expect(typeof failedBadge.failureReason).toBe('string');
+
+      let deadLetterAudit = null as { id: string } | null;
+      for (let i = 0; i < 50; i += 1) {
+        deadLetterAudit = await prisma.auditLog.findFirst({
+          where: {
+            organizationId: org.id,
+            action: 'BADGE_RENDER_DEAD_LETTER',
+            targetId: issued.badgeId
+          },
+          select: {
+            id: true
+          }
+        });
+
+        if (deadLetterAudit) {
+          break;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      expect(deadLetterAudit).toBeTruthy();
+
+      const metricsRes = await request(app.getHttpServer())
+        .get(`/org/${org.code}/badges/renderer/metrics`)
+        .set('Authorization', `Bearer ${auth.accessToken}`);
+
+      expect(metricsRes.status).toBe(200);
+      expect((metricsRes.body as { metrics: { alertsSent: number } }).metrics.alertsSent).toBeGreaterThan(0);
+    } finally {
+      if (previousRoot === undefined) {
+        delete process.env.BADGE_STORAGE_ROOT;
+      } else {
+        process.env.BADGE_STORAGE_ROOT = previousRoot;
+      }
+
+      if (previousAlertThreshold === undefined) {
+        delete process.env.BADGE_RENDER_ALERT_FAILURE_STREAK;
+      } else {
+        process.env.BADGE_RENDER_ALERT_FAILURE_STREAK = previousAlertThreshold;
+      }
+    }
   });
 
   it('rejects revoked qr tokens', async () => {

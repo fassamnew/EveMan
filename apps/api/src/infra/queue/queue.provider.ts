@@ -1,7 +1,7 @@
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { PrismaClient } from '@prisma/client';
-import { putBadgeArtifact } from '../storage/badge-storage.util';
+import { createBadgeSignedDownloadUrl, putBadgeArtifact } from '../storage/badge-storage.util';
 import {
   getBadgeRenderAlertThreshold,
   getBadgeRenderMetricsSnapshot,
@@ -88,6 +88,15 @@ async function sendBadgeRenderAlert(input: {
   }
 }
 
+function getDeliveryLinkTtlSeconds(): number {
+  const value = Number(process.env.BADGE_DELIVERY_LINK_TTL_SECONDS || 86400);
+  if (!Number.isFinite(value) || value < 300 || value > 604800) {
+    return 86400;
+  }
+
+  return Math.floor(value);
+}
+
 function getRedisConnection(): IORedis {
   if (redisConnection) {
     return redisConnection;
@@ -136,6 +145,99 @@ export function startSystemWorker(): Worker {
         console.log(
           `confirmation-email queued for ${payload.email} (${payload.referenceCode}) on ${payload.eventName}`
         );
+        return;
+      }
+
+      if (job.name === 'badge.render.dead-letter') {
+        const payload = job.data as {
+          badgeId: string;
+          organizationId: string;
+          reason: string;
+          attemptsMade: number;
+          attemptsAllowed: number;
+        };
+
+        const prisma = getWorkerPrisma();
+        await prisma.auditLog.create({
+          data: {
+            actorUserId: null,
+            organizationId: payload.organizationId,
+            action: 'BADGE_RENDER_DEAD_LETTER',
+            targetType: 'BADGE',
+            targetId: payload.badgeId,
+            outcome: 'FAILURE',
+            ipAddress: null,
+            metadataJson: {
+              reason: payload.reason,
+              attemptsMade: payload.attemptsMade,
+              attemptsAllowed: payload.attemptsAllowed
+            }
+          }
+        });
+
+        console.error(
+          `badge-render dead-letter: badge=${payload.badgeId} attempts=${payload.attemptsMade}/${payload.attemptsAllowed} reason=${payload.reason}`
+        );
+        return;
+      }
+
+      if (job.name === 'badge.delivery-link-email') {
+        const payload = job.data as { badgeId: string };
+        const prisma = getWorkerPrisma();
+
+        const badge = await prisma.badge.findUnique({
+          where: { id: payload.badgeId },
+          include: {
+            registrant: {
+              select: {
+                email: true,
+                fullName: true
+              }
+            },
+            event: {
+              select: {
+                name: true
+              }
+            }
+          }
+        });
+
+        if (!badge || badge.status !== 'READY' || !badge.storagePath) {
+          throw new Error('Badge not ready for delivery link');
+        }
+
+        const expiresInSeconds = getDeliveryLinkTtlSeconds();
+        const downloadUrl = await createBadgeSignedDownloadUrl({
+          storagePath: badge.storagePath,
+          expiresInSeconds
+        });
+
+        console.log(
+          `badge-delivery-link queued for ${badge.registrant.email} (${badge.registrant.fullName}) on ${badge.event.name}: ${downloadUrl}`
+        );
+
+        await prisma.badge.update({
+          where: { id: badge.id },
+          data: {
+            deliveredAt: new Date()
+          }
+        });
+
+        await prisma.auditLog.create({
+          data: {
+            actorUserId: null,
+            organizationId: badge.organizationId,
+            action: 'BADGE_DELIVERY_LINK_CREATE',
+            targetType: 'BADGE',
+            targetId: badge.id,
+            outcome: 'SUCCESS',
+            ipAddress: null,
+            metadataJson: {
+              expiresInSeconds
+            }
+          }
+        });
+
         return;
       }
 
@@ -197,10 +299,25 @@ export function startSystemWorker(): Worker {
               status: 'READY',
               storagePath,
               renderedAt: new Date(),
-              deliveredAt: new Date(),
+              deliveredAt: null,
               failureReason: null
             }
           });
+
+          const queue = getSystemQueue();
+          await queue.add(
+            'badge.delivery-link-email',
+            { badgeId: badge.id },
+            {
+              attempts: 3,
+              backoff: {
+                type: 'exponential',
+                delay: 1000
+              },
+              removeOnComplete: 100,
+              removeOnFail: 100
+            }
+          );
 
           recordBadgeRenderSuccess({
             durationMs: Date.now() - startedAtMs
@@ -238,6 +355,24 @@ export function startSystemWorker(): Worker {
               attemptsAllowed,
               consecutiveFailures: snapshot.consecutiveFailures
             });
+          }
+
+          if (isFinalFailure) {
+            const queue = getSystemQueue();
+            await queue.add(
+              'badge.render.dead-letter',
+              {
+                badgeId: badge.id,
+                organizationId: badge.organizationId,
+                reason: message,
+                attemptsMade,
+                attemptsAllowed
+              },
+              {
+                removeOnComplete: 100,
+                removeOnFail: 100
+              }
+            );
           }
 
           throw error;
