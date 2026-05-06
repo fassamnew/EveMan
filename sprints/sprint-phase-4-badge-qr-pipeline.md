@@ -31,6 +31,20 @@ Implement scalable badge and QR generation pipelines with secure tokenization an
 7. Add renderer metrics and job failure alerting.
 8. Build organization portal template management UI v1.
 
+## Implementation Status
+
+Completed in code and integration tests:
+1. Backlog item 1: schema and migration for badge templates, QR codes, and badges.
+2. Backlog item 2: template assignment endpoint at registration-link level.
+3. Backlog item 3: signed QR payload format with hash-only DB verification.
+4. Backlog item 4: BullMQ async badge render and retry behavior.
+5. Backlog item 5: badge storage abstraction with S3 mode and signed download URLs (plus local signed fallback for development/testing).
+6. Backlog item 6: badge regeneration endpoint for authorized organization users.
+
+Remaining tasks:
+1. Backlog item 7: renderer metrics and job failure alerting.
+2. Backlog item 8: organization portal template management UI v1.
+
 ## Security and Compliance Requirements
 
 1. QR payload must avoid exposing raw PII.

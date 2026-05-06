@@ -9,6 +9,11 @@ import { createHash } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { PrismaService } from '../../infra/db/prisma.service';
 import { getSystemQueue } from '../../infra/queue/queue.provider';
+import {
+  createBadgeSignedDownloadUrl,
+  isValidLocalBadgeSignature,
+  readLocalBadgeArtifact
+} from '../../infra/storage/badge-storage.util';
 import { AuditService } from '../common/audit.service';
 
 type QrPayload = {
@@ -34,6 +39,14 @@ export class BadgeQrService {
 
   private hashToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');
+  }
+
+  private parseExpiresSeconds(value?: string): number {
+    const parsed = value ? Number(value) : 300;
+    if (!Number.isFinite(parsed) || parsed < 60 || parsed > 900) {
+      return 300;
+    }
+    return Math.floor(parsed);
   }
 
   async assignTemplateToLink(input: {
@@ -232,6 +245,74 @@ export class BadgeQrService {
     return {
       badgeId: updated.id,
       status: updated.status
+    };
+  }
+
+  async getBadgeDownloadUrl(input: {
+    orgCode: string;
+    registrantId: string;
+    expiresInSeconds?: string;
+  }) {
+    const org = await this.prisma.organization.findUnique({ where: { code: input.orgCode } });
+    if (!org) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    const badge = await this.prisma.badge.findFirst({
+      where: {
+        organizationId: org.id,
+        registrantId: input.registrantId,
+        status: 'READY',
+        storagePath: {
+          not: null
+        }
+      },
+      orderBy: {
+        updatedAt: 'desc'
+      }
+    });
+
+    if (!badge || !badge.storagePath) {
+      throw new NotFoundException('Ready badge not found');
+    }
+
+    const expiresIn = this.parseExpiresSeconds(input.expiresInSeconds);
+    const downloadUrl = await createBadgeSignedDownloadUrl({
+      storagePath: badge.storagePath,
+      expiresInSeconds: expiresIn
+    });
+
+    return {
+      badgeId: badge.id,
+      expiresInSeconds: expiresIn,
+      downloadUrl
+    };
+  }
+
+  async getLocalBadgeDownload(input: {
+    path: string;
+    expires: string;
+    sig: string;
+  }) {
+    const expiresAtMs = Number(input.expires);
+    if (!Number.isFinite(expiresAtMs)) {
+      throw new BadRequestException('Invalid expires value');
+    }
+
+    const valid = isValidLocalBadgeSignature({
+      storagePath: input.path,
+      expiresAtMs,
+      signature: input.sig
+    });
+
+    if (!valid) {
+      throw new BadRequestException('Invalid or expired badge download signature');
+    }
+
+    const content = await readLocalBadgeArtifact(input.path);
+    return {
+      filename: input.path.split('/').pop() || 'badge.txt',
+      content
     };
   }
 

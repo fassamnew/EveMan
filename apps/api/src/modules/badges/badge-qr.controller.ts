@@ -1,12 +1,16 @@
 import {
   Body,
   Controller,
+  Get,
   Inject,
   Param,
   Patch,
   Post,
+  Query,
+  Res,
   UseGuards
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { AccessTokenGuard } from '../common/guards/access-token.guard';
 import { OrgAccessGuard } from '../common/guards/org-access.guard';
 import { ManagementRateLimitGuard } from '../common/guards/management-rate-limit.guard';
@@ -38,6 +42,38 @@ export class BadgeQrController {
     @Param('registrantId') registrantId: string
   ) {
     return this.badgeQrService.regenerateBadge({ orgCode, registrantId });
+  }
+
+  @UseGuards(AccessTokenGuard, OrgAccessGuard)
+  @Get('org/:orgCode/registrants/:registrantId/badge/download-url')
+  async getDownloadUrl(
+    @Param('orgCode') orgCode: string,
+    @Param('registrantId') registrantId: string,
+    @Query('expiresInSeconds') expiresInSeconds?: string
+  ) {
+    return this.badgeQrService.getBadgeDownloadUrl({
+      orgCode,
+      registrantId,
+      expiresInSeconds
+    });
+  }
+
+  @Get('public/badges/download')
+  async downloadLocalBadge(
+    @Query('path') path: string,
+    @Query('expires') expires: string,
+    @Query('sig') sig: string,
+    @Res() res: Response
+  ) {
+    const result = await this.badgeQrService.getLocalBadgeDownload({
+      path,
+      expires,
+      sig
+    });
+
+    res.setHeader('content-type', 'text/plain; charset=utf-8');
+    res.setHeader('content-disposition', `attachment; filename="${result.filename}"`);
+    res.send(result.content);
   }
 
   @Post('verify/qr')

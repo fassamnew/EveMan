@@ -237,6 +237,21 @@ describe.skipIf(!runIntegration)('Badge QR integration (MySQL)', () => {
     expect(verifyRes.body.status).toBe('VALID');
     expect(verifyRes.body.registrant.name).toBe('Acme Person');
 
+    const downloadRes = await request(app.getHttpServer())
+      .get(`/org/${org.code}/registrants/${registrant.id}/badge/download-url`)
+      .set('Authorization', `Bearer ${auth.accessToken}`);
+
+    expect(downloadRes.status).toBe(200);
+    expect(downloadRes.body.expiresInSeconds).toBe(300);
+    expect(typeof downloadRes.body.downloadUrl).toBe('string');
+
+    const url = new URL(downloadRes.body.downloadUrl as string);
+    if (url.pathname === '/public/badges/download') {
+      const localBadgeRes = await request(app.getHttpServer()).get(`${url.pathname}${url.search}`);
+      expect(localBadgeRes.status).toBe(200);
+      expect(localBadgeRes.text).toContain('Acme Person');
+    }
+
     const tamperedRes = await request(app.getHttpServer())
       .post('/verify/qr')
       .send({ token: `${issued.qrToken}tamper` });

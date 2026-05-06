@@ -1,8 +1,7 @@
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { PrismaClient } from '@prisma/client';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { putBadgeArtifact } from '../storage/badge-storage.util';
 
 let redisConnection: IORedis | null = null;
 let systemQueue: Queue | null = null;
@@ -20,16 +19,13 @@ function getWorkerPrisma(): PrismaClient {
 
 async function renderBadgeArtifact(input: {
   badgeId: string;
+  eventId: string;
   fullName: string;
   email: string;
   eventName: string;
   templateName: string;
   qrCodeId: string | null;
 }): Promise<string> {
-  const root = process.env.BADGE_STORAGE_ROOT || join(process.cwd(), 'tmp', 'badges');
-  await mkdir(root, { recursive: true });
-
-  const filePath = join(root, `${input.badgeId}.txt`);
   const content = [
     'EveMange Badge',
     `Badge ID: ${input.badgeId}`,
@@ -40,8 +36,11 @@ async function renderBadgeArtifact(input: {
     `QR Code ID: ${input.qrCodeId || 'N/A'}`
   ].join('\n');
 
-  await writeFile(filePath, content, 'utf8');
-  return filePath;
+  return putBadgeArtifact({
+    badgeId: input.badgeId,
+    eventId: input.eventId,
+    body: content
+  });
 }
 
 function getRedisConnection(): IORedis {
@@ -136,6 +135,7 @@ export function startSystemWorker(): Worker {
         try {
           const storagePath = await renderBadgeArtifact({
             badgeId: badge.id,
+            eventId: badge.eventId,
             fullName: badge.registrant.fullName,
             email: badge.registrant.email,
             eventName: badge.event.name,
