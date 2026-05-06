@@ -9,12 +9,13 @@
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:integration": "vitest run src/modules/auth/auth.integration.test.ts",
+    "test:integration": "vitest run src/modules/**/*.integration.test.ts --fileParallelism=false",
     "db:generate": "prisma generate",
     "db:migrate:dev": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:rollback:baseline": "prisma db execute --file prisma/migrations/0001_init/down.sql --schema prisma/schema.prisma",
-    "db:rollback:identity": "prisma db execute --file prisma/migrations/0002_identity_tenancy/down.sql --schema prisma/schema.prisma"
+    "db:rollback:identity": "prisma db execute --file prisma/migrations/0002_identity_tenancy/down.sql --schema prisma/schema.prisma",
+    "db:rollback:events-links": "prisma db execute --file prisma/migrations/0003_events_links/down.sql --schema prisma/schema.prisma"
   },
   "dependencies": {
     "@aws-sdk/client-secrets-manager": "^3.821.0",

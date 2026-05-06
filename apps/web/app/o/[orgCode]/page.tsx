@@ -176,6 +176,14 @@ export default function OrganizationPortalPage() {
       <h1>Organization Portal</h1>
       <p>Organization code: {normalizedOrgCode}</p>
       <p>Signed in as {email || '...'}</p>
+      <p>
+        <button
+          type="button"
+          onClick={() => router.push(`/o/${normalizedOrgCode}/events`)}
+        >
+          Manage events and links
+        </button>
+      </p>
       <button
         type="button"
         onClick={() => {

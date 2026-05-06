@@ -38,6 +38,14 @@ export class PolicyService {
     return auth.organizationCode === targetOrgCode;
   }
 
+  canManageEventSettings(auth: AuthContext, targetOrgCode: string): boolean {
+    if (!this.canAccessTenant(auth, targetOrgCode)) {
+      return false;
+    }
+
+    return this.hasRole(auth, 'SUPER_ADMIN') || this.hasRole(auth, 'ORG_ADMIN');
+  }
+
   getEffectivePermissions(auth: AuthContext): string[] {
     const merged = new Set<string>();
 

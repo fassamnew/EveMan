@@ -11,6 +11,8 @@ import { AuthController } from './modules/auth/auth.controller';
 import { AuthService } from './modules/auth/auth.service';
 import { OrganizationsController } from './modules/organizations/organizations.controller';
 import { OrganizationsService } from './modules/organizations/organizations.service';
+import { EventsController } from './modules/events/events.controller';
+import { EventsService } from './modules/events/events.service';
 import { AccessTokenGuard } from './modules/common/guards/access-token.guard';
 import { SuperAdminGuard } from './modules/common/guards/super-admin.guard';
 import { OrgAccessGuard } from './modules/common/guards/org-access.guard';
@@ -20,7 +22,7 @@ import { IdentityBootstrapService } from './modules/organizations/identity-boots
 
 @Module({
   imports: [],
-  controllers: [HealthController, AuthController, OrganizationsController],
+  controllers: [HealthController, AuthController, OrganizationsController, EventsController],
   providers: [
     PrismaService,
     AuditService,
@@ -30,6 +32,7 @@ import { IdentityBootstrapService } from './modules/organizations/identity-boots
     TokenService,
     AuthService,
     OrganizationsService,
+    EventsService,
     AccessTokenGuard,
     SuperAdminGuard,
     OrgAccessGuard,
