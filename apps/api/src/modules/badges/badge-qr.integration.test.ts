@@ -252,11 +252,76 @@ describe.skipIf(!runIntegration)('Badge QR integration (MySQL)', () => {
       expect(localBadgeRes.text).toContain('Acme Person');
     }
 
+    const metricsRes = await request(app.getHttpServer())
+      .get(`/org/${org.code}/badges/renderer/metrics`)
+      .set('Authorization', `Bearer ${auth.accessToken}`);
+
+    expect(metricsRes.status).toBe(200);
+    expect((metricsRes.body as { metrics: { totalJobs: number } }).metrics.totalJobs).toBeGreaterThan(0);
+
     const tamperedRes = await request(app.getHttpServer())
       .post('/verify/qr')
       .send({ token: `${issued.qrToken}tamper` });
 
     expect(tamperedRes.status).toBe(400);
+  });
+
+  it('creates, updates, lists and disables badge templates via org endpoints', async () => {
+    const org = await prisma.organization.create({ data: { name: 'Templabs', code: 'templabs' } });
+
+    await createOrgUser({
+      email: 'admin@templabs.com',
+      password: 'StrongPass123!',
+      orgId: org.id,
+      roleName: 'ORG_ADMIN'
+    });
+
+    const auth = await loginOrgUser({
+      email: 'admin@templabs.com',
+      password: 'StrongPass123!',
+      orgId: org.id
+    });
+
+    const createRes = await request(app.getHttpServer())
+      .post(`/org/${org.code}/templates/badges`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({
+        name: 'Gate Pass',
+        version: 1,
+        configJson: { layout: 'gate-v1', accent: 'teal' }
+      });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.name).toBe('Gate Pass');
+
+    const updateRes = await request(app.getHttpServer())
+      .patch(`/org/${org.code}/templates/badges/${createRes.body.id as string}`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({
+        name: 'Gate Pass Updated',
+        version: 2,
+        configJson: { layout: 'gate-v2', accent: 'orange' }
+      });
+
+    expect(updateRes.status).toBe(200);
+    expect(updateRes.body.name).toBe('Gate Pass Updated');
+    expect(updateRes.body.version).toBe(2);
+
+    const listRes = await request(app.getHttpServer())
+      .get(`/org/${org.code}/templates/badges`)
+      .set('Authorization', `Bearer ${auth.accessToken}`);
+
+    expect(listRes.status).toBe(200);
+    expect(Array.isArray(listRes.body)).toBe(true);
+    expect((listRes.body as Array<{ id: string }>).some(item => item.id === createRes.body.id)).toBe(true);
+
+    const disableRes = await request(app.getHttpServer())
+      .delete(`/org/${org.code}/templates/badges/${createRes.body.id as string}`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({});
+
+    expect(disableRes.status).toBe(200);
+    expect(disableRes.body.isActive).toBe(false);
   });
 
   it('rejects revoked qr tokens', async () => {

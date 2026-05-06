@@ -184,6 +184,14 @@ export default function OrganizationPortalPage() {
           Manage events and links
         </button>
       </p>
+      <p>
+        <button
+          type="button"
+          onClick={() => router.push(`/o/${normalizedOrgCode}/templates/badges`)}
+        >
+          Manage badge templates
+        </button>
+      </p>
       <button
         type="button"
         onClick={() => {

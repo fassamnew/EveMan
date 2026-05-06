@@ -40,10 +40,11 @@ Completed in code and integration tests:
 4. Backlog item 4: BullMQ async badge render and retry behavior.
 5. Backlog item 5: badge storage abstraction with S3 mode and signed download URLs (plus local signed fallback for development/testing).
 6. Backlog item 6: badge regeneration endpoint for authorized organization users.
+7. Backlog item 7: renderer metrics and job failure alerting with threshold-based webhook/log alerts.
+8. Backlog item 8: organization portal badge template management UI v1 with create/list/update/disable flows.
 
 Remaining tasks:
-1. Backlog item 7: renderer metrics and job failure alerting.
-2. Backlog item 8: organization portal template management UI v1.
+1. None in current Phase 4 backlog.
 
 ## Security and Compliance Requirements
 

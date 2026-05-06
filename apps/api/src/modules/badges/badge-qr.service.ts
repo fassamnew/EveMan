@@ -1,13 +1,15 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException
 } from '@nestjs/common';
-import { AuditOutcome } from '@prisma/client';
+import { AuditOutcome, Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { PrismaService } from '../../infra/db/prisma.service';
+import { getBadgeRenderMetricsSnapshot } from '../../infra/queue/badge-render.metrics';
 import { getSystemQueue } from '../../infra/queue/queue.provider';
 import {
   createBadgeSignedDownloadUrl,
@@ -15,6 +17,10 @@ import {
   readLocalBadgeArtifact
 } from '../../infra/storage/badge-storage.util';
 import { AuditService } from '../common/audit.service';
+import { PolicyService } from '../common/policy.service';
+import type { RequestWithAuth } from '../common/request-with-auth';
+import type { CreateBadgeTemplateDto } from './dto/create-badge-template.dto';
+import type { UpdateBadgeTemplateDto } from './dto/update-badge-template.dto';
 
 type QrPayload = {
   v: 1;
@@ -30,7 +36,8 @@ type QrPayload = {
 export class BadgeQrService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(AuditService) private readonly audit: AuditService
+    @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(PolicyService) private readonly policy: PolicyService
   ) {}
 
   private getQrSecret(): string {
@@ -47,6 +54,127 @@ export class BadgeQrService {
       return 300;
     }
     return Math.floor(parsed);
+  }
+
+  private assertTenantReadAccess(orgCode: string, req: RequestWithAuth): void {
+    if (!req.auth || !this.policy.canAccessTenant(req.auth, orgCode)) {
+      throw new ForbiddenException('Missing tenant access');
+    }
+  }
+
+  private assertTemplateWriteAccess(orgCode: string, req: RequestWithAuth): void {
+    if (!req.auth || !this.policy.canManageEventSettings(req.auth, orgCode)) {
+      throw new ForbiddenException('ORG_ADMIN role required to manage templates');
+    }
+  }
+
+  private toJsonValue(value: Record<string, unknown>): Prisma.InputJsonValue {
+    return value as Prisma.InputJsonValue;
+  }
+
+  private async getOrganizationId(orgCode: string): Promise<string> {
+    const org = await this.prisma.organization.findUnique({
+      where: { code: orgCode },
+      select: { id: true }
+    });
+
+    if (!org) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    return org.id;
+  }
+
+  async createTemplate(input: {
+    orgCode: string;
+    dto: CreateBadgeTemplateDto;
+    req: RequestWithAuth;
+  }) {
+    this.assertTemplateWriteAccess(input.orgCode, input.req);
+    const organizationId = await this.getOrganizationId(input.orgCode);
+
+    return this.prisma.badgeTemplate.create({
+      data: {
+        organizationId,
+        name: input.dto.name,
+        version: input.dto.version || 1,
+        configJson: this.toJsonValue(input.dto.configJson),
+        isActive: true
+      }
+    });
+  }
+
+  async listTemplates(input: { orgCode: string; req: RequestWithAuth }) {
+    this.assertTenantReadAccess(input.orgCode, input.req);
+    const organizationId = await this.getOrganizationId(input.orgCode);
+
+    return this.prisma.badgeTemplate.findMany({
+      where: {
+        organizationId
+      },
+      orderBy: [
+        { updatedAt: 'desc' },
+        { version: 'desc' }
+      ]
+    });
+  }
+
+  async updateTemplate(input: {
+    orgCode: string;
+    templateId: string;
+    dto: UpdateBadgeTemplateDto;
+    req: RequestWithAuth;
+  }) {
+    this.assertTemplateWriteAccess(input.orgCode, input.req);
+    const organizationId = await this.getOrganizationId(input.orgCode);
+
+    const existing = await this.prisma.badgeTemplate.findFirst({
+      where: {
+        id: input.templateId,
+        organizationId
+      }
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Badge template not found');
+    }
+
+    return this.prisma.badgeTemplate.update({
+      where: { id: existing.id },
+      data: {
+        name: input.dto.name,
+        version: input.dto.version,
+        configJson: input.dto.configJson ? this.toJsonValue(input.dto.configJson) : undefined,
+        isActive: input.dto.isActive
+      }
+    });
+  }
+
+  async disableTemplate(input: {
+    orgCode: string;
+    templateId: string;
+    req: RequestWithAuth;
+  }) {
+    this.assertTemplateWriteAccess(input.orgCode, input.req);
+    const organizationId = await this.getOrganizationId(input.orgCode);
+
+    const existing = await this.prisma.badgeTemplate.findFirst({
+      where: {
+        id: input.templateId,
+        organizationId
+      }
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Badge template not found');
+    }
+
+    return this.prisma.badgeTemplate.update({
+      where: { id: existing.id },
+      data: {
+        isActive: false
+      }
+    });
   }
 
   async assignTemplateToLink(input: {
@@ -286,6 +414,16 @@ export class BadgeQrService {
       badgeId: badge.id,
       expiresInSeconds: expiresIn,
       downloadUrl
+    };
+  }
+
+  async getRendererMetrics(input: { orgCode: string; req: RequestWithAuth }) {
+    this.assertTenantReadAccess(input.orgCode, input.req);
+    const organizationId = await this.getOrganizationId(input.orgCode);
+
+    return {
+      organizationId,
+      metrics: getBadgeRenderMetricsSnapshot()
     };
   }
 

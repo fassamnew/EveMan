@@ -2,6 +2,14 @@ import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { PrismaClient } from '@prisma/client';
 import { putBadgeArtifact } from '../storage/badge-storage.util';
+import {
+  getBadgeRenderAlertThreshold,
+  getBadgeRenderMetricsSnapshot,
+  recordBadgeRenderAlert,
+  recordBadgeRenderFailure,
+  recordBadgeRenderStart,
+  recordBadgeRenderSuccess
+} from './badge-render.metrics';
 
 let redisConnection: IORedis | null = null;
 let systemQueue: Queue | null = null;
@@ -41,6 +49,43 @@ async function renderBadgeArtifact(input: {
     eventId: input.eventId,
     body: content
   });
+}
+
+async function sendBadgeRenderAlert(input: {
+  badgeId: string;
+  reason: string;
+  attemptsMade: number;
+  attemptsAllowed: number;
+  consecutiveFailures: number;
+}): Promise<void> {
+  const event = recordBadgeRenderAlert(input);
+  const message =
+    `badge-render alert: badge=${event.badgeId} attempts=${event.attemptsMade}/${event.attemptsAllowed}` +
+    ` consecutiveFailures=${event.consecutiveFailures} reason=${event.reason}`;
+
+  console.error(message);
+
+  const webhook = process.env.BADGE_RENDER_ALERT_WEBHOOK_URL;
+  if (!webhook) {
+    return;
+  }
+
+  try {
+    await fetch(webhook, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        source: 'evemange.badge-render',
+        severity: 'error',
+        ...event
+      })
+    });
+  } catch (error) {
+    const webhookError = error instanceof Error ? error.message : 'Unknown webhook error';
+    console.error(`badge-render alert webhook failed: ${webhookError}`);
+  }
 }
 
 function getRedisConnection(): IORedis {
@@ -95,6 +140,9 @@ export function startSystemWorker(): Worker {
       }
 
       if (job.name === 'badge.render') {
+        const startedAtMs = Date.now();
+        recordBadgeRenderStart({ attemptsMade: job.attemptsMade });
+
         const payload = job.data as { badgeId: string };
         const prisma = getWorkerPrisma();
 
@@ -153,6 +201,10 @@ export function startSystemWorker(): Worker {
               failureReason: null
             }
           });
+
+          recordBadgeRenderSuccess({
+            durationMs: Date.now() - startedAtMs
+          });
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Unknown render failure';
           await prisma.badge.update({
@@ -162,6 +214,32 @@ export function startSystemWorker(): Worker {
               failureReason: message
             }
           });
+
+          recordBadgeRenderFailure({
+            durationMs: Date.now() - startedAtMs,
+            reason: message
+          });
+
+          const attemptsAllowed =
+            typeof job.opts.attempts === 'number' && Number.isFinite(job.opts.attempts)
+              ? Math.max(1, Math.floor(job.opts.attempts))
+              : 1;
+          const attemptsMade = job.attemptsMade + 1;
+          const isFinalFailure = attemptsMade >= attemptsAllowed;
+          const snapshot = getBadgeRenderMetricsSnapshot();
+          const failureThresholdReached =
+            getBadgeRenderAlertThreshold() <= snapshot.consecutiveFailures;
+
+          if (isFinalFailure || failureThresholdReached) {
+            await sendBadgeRenderAlert({
+              badgeId: badge.id,
+              reason: message,
+              attemptsMade,
+              attemptsAllowed,
+              consecutiveFailures: snapshot.consecutiveFailures
+            });
+          }
+
           throw error;
         }
       }
