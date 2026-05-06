@@ -8,6 +8,7 @@ This document defines the public registration APIs for Phase 3.
 2. `GET /public/register/:slug/schema`
 3. `POST /public/register/:slug/submissions`
 4. `GET /public/register/lookup?referenceCode=...&email=...`
+5. `GET /public/register/badge?referenceCode=...&email=...`
 
 ## Resolve Link
 
@@ -44,7 +45,8 @@ Success response:
 ```json
 {
   "referenceCode": "A1B2C3D4",
-  "status": "CONFIRMED"
+  "status": "CONFIRMED",
+  "confirmationQueued": true
 }
 ```
 
@@ -54,10 +56,17 @@ Success response:
 
 Returns registrant details for re-download and confirmation views.
 
+## Badge Re-Download
+
+`GET /public/register/badge?referenceCode=...&email=...`
+
+Returns a generated badge ticket payload after validating reference and email.
+
 ## Validation and Security
 
 1. Submission endpoint is protected by public rate limiting.
-2. `captchaToken` is required and validated.
+2. `captchaToken` is required and verified through `CaptchaService` (provider-backed when configured; dev fallback token strategy otherwise).
 3. Dynamic field values are validated by field type and constraints.
 4. Duplicate registration is blocked per `(registrationLinkId, email)`.
 5. Consent is required and stored with timestamp and policy version.
+6. Confirmation workflow enqueues `registration.confirmation-email` jobs to the system queue.

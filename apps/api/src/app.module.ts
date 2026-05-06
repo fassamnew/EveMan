@@ -1,12 +1,13 @@
 import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { HealthController } from './health.controller';
-import { getSystemQueue } from './infra/queue/queue.provider';
+import { getSystemQueue, startSystemWorker } from './infra/queue/queue.provider';
 import { PrismaService } from './infra/db/prisma.service';
 import { AuditService } from './modules/common/audit.service';
 import { PasswordService } from './modules/common/password.service';
 import { TokenService } from './modules/common/token.service';
 import { PolicyService } from './modules/common/policy.service';
 import { SecretsService } from './modules/common/secrets.service';
+import { CaptchaService } from './modules/common/captcha.service';
 import { AuthController } from './modules/auth/auth.controller';
 import { AuthService } from './modules/auth/auth.service';
 import { OrganizationsController } from './modules/organizations/organizations.controller';
@@ -37,6 +38,7 @@ import { RegistrationsService } from './modules/registrations/registrations.serv
     PrismaService,
     AuditService,
     SecretsService,
+    CaptchaService,
     PolicyService,
     PasswordService,
     TokenService,
@@ -57,6 +59,7 @@ export class AppModule implements NestModule {
   onModuleInit() {
     // Queue bootstrap for background jobs; workers are added in later phases.
     getSystemQueue();
+    startSystemWorker();
   }
 
   configure(consumer: MiddlewareConsumer): void {

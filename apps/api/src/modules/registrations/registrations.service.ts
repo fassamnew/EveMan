@@ -8,7 +8,9 @@ import {
 import { AuditOutcome, FormFieldType, LinkVisibility } from '@prisma/client';
 import type { Request } from 'express';
 import { PrismaService } from '../../infra/db/prisma.service';
+import { getSystemQueue } from '../../infra/queue/queue.provider';
 import { AuditService } from '../common/audit.service';
+import { CaptchaService } from '../common/captcha.service';
 import type { SubmitRegistrationDto } from './dto/submit-registration.dto';
 
 type ActiveLink = {
@@ -54,7 +56,8 @@ type ActiveLink = {
 export class RegistrationsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(AuditService) private readonly audit: AuditService
+    @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(CaptchaService) private readonly captcha: CaptchaService
   ) {}
 
   private async findActiveLinkBySlug(slug: string): Promise<ActiveLink> {
@@ -153,12 +156,6 @@ export class RegistrationsService {
     }
 
     return link as ActiveLink;
-  }
-
-  private validateCaptcha(token: string): void {
-    if (!token || token.trim().length < 8) {
-      throw new BadRequestException('Captcha verification failed');
-    }
   }
 
   private normalizeEmail(email: string): string {
@@ -263,6 +260,26 @@ export class RegistrationsService {
     throw new BadRequestException('Unable to generate unique reference code');
   }
 
+  private async triggerConfirmationEmail(input: {
+    registrantId: string;
+    referenceCode: string;
+    email: string;
+    fullName: string;
+    eventName: string;
+    linkTitle: string;
+  }): Promise<boolean> {
+    try {
+      const queue = getSystemQueue();
+      await queue.add('registration.confirmation-email', input, {
+        removeOnComplete: 100,
+        removeOnFail: 100
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async resolveLink(slug: string) {
     const link = await this.findActiveLinkBySlug(slug);
 
@@ -305,7 +322,10 @@ export class RegistrationsService {
 
   async submit(slug: string, dto: SubmitRegistrationDto, req: Request) {
     const link = await this.findActiveLinkBySlug(slug);
-    this.validateCaptcha(dto.captchaToken);
+    const captchaOk = await this.captcha.verifyToken(dto.captchaToken, req.ip || null);
+    if (!captchaOk) {
+      throw new BadRequestException('Captcha verification failed');
+    }
 
     if (!dto.consentAccepted) {
       throw new BadRequestException('Consent is required');
@@ -380,7 +400,28 @@ export class RegistrationsService {
         responses: {
           create: responseRows
         }
+      },
+      include: {
+        event: {
+          select: {
+            name: true
+          }
+        },
+        registrationLink: {
+          select: {
+            title: true
+          }
+        }
       }
+    });
+
+    const confirmationQueued = await this.triggerConfirmationEmail({
+      registrantId: created.id,
+      referenceCode: created.referenceCode,
+      email: created.email,
+      fullName: created.fullName,
+      eventName: created.event.name,
+      linkTitle: created.registrationLink.title
     });
 
     await this.audit.write({
@@ -392,14 +433,15 @@ export class RegistrationsService {
       outcome: AuditOutcome.SUCCESS,
       ipAddress: req.ip || null,
       metadataJson: {
-        confirmationTriggered: true,
+        confirmationTriggered: confirmationQueued,
         policyVersion: dto.consentPolicyVersion
       }
     });
 
     return {
       referenceCode: created.referenceCode,
-      status: 'CONFIRMED'
+      status: 'CONFIRMED',
+      confirmationQueued
     };
   }
 
@@ -443,6 +485,25 @@ export class RegistrationsService {
       link: registrant.registrationLink,
       organization: registrant.organization,
       badgeRedownloadUrl: `/register/retrieve?referenceCode=${registrant.referenceCode}&email=${encodeURIComponent(registrant.email)}`
+    };
+  }
+
+  async getBadge(referenceCode: string, email: string) {
+    const registrant = await this.retrieve(referenceCode, email);
+
+    return {
+      referenceCode: registrant.referenceCode,
+      fullName: registrant.fullName,
+      eventName: registrant.event.name,
+      organizationName: registrant.organization.name,
+      badgeText: [
+        'EveMange Registration Badge',
+        `Reference: ${registrant.referenceCode}`,
+        `Name: ${registrant.fullName}`,
+        `Email: ${registrant.email}`,
+        `Event: ${registrant.event.name}`,
+        `Organization: ${registrant.organization.name}`
+      ].join('\n')
     };
   }
 }

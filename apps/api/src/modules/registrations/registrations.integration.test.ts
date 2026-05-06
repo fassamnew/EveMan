@@ -132,6 +132,16 @@ describe.skipIf(!runIntegration)('Registrations integration (MySQL)', () => {
     const schemaRes = await request(app.getHttpServer()).get('/public/register/nova-summit-2026/schema');
     expect(schemaRes.status).toBe(200);
     expect(schemaRes.body.fields).toHaveLength(2);
+    expect(schemaRes.body.fields[0]).toMatchObject({
+      key: 'country',
+      type: 'SELECT',
+      required: true
+    });
+    expect(schemaRes.body.fields[1]).toMatchObject({
+      key: 'age',
+      type: 'NUMBER',
+      required: true
+    });
 
     const submitRes = await request(app.getHttpServer())
       .post('/public/register/nova-summit-2026/submissions')
@@ -160,6 +170,17 @@ describe.skipIf(!runIntegration)('Registrations integration (MySQL)', () => {
     expect(retrieveRes.status).toBe(200);
     expect(retrieveRes.body.fullName).toBe('Ada Lovelace');
     expect(retrieveRes.body.link.slug).toBe('nova-summit-2026');
+
+    const badgeRes = await request(app.getHttpServer())
+      .get('/public/register/badge')
+      .query({
+        referenceCode: submitRes.body.referenceCode,
+        email: 'ada@example.com'
+      });
+
+    expect(badgeRes.status).toBe(200);
+    expect(typeof badgeRes.body.badgeText).toBe('string');
+    expect(badgeRes.body.badgeText).toContain('Ada Lovelace');
   });
 
   it('enforces duplicate policy and capacity checks', async () => {
@@ -230,5 +251,153 @@ describe.skipIf(!runIntegration)('Registrations integration (MySQL)', () => {
       });
 
     expect(capacity.status).toBe(400);
+  });
+
+  it('validates required and constrained dynamic fields', async () => {
+    const org = await prisma.organization.create({
+      data: { name: 'Strict Org', code: 'strict' }
+    });
+
+    const event = await prisma.event.create({
+      data: {
+        organizationId: org.id,
+        name: 'Strict Event',
+        status: 'PUBLISHED'
+      }
+    });
+
+    const link = await prisma.registrationLink.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        slug: 'strict-event',
+        title: 'Strict Event Registration',
+        rule: {
+          create: {
+            visibility: 'PUBLIC',
+            approvalMode: 'AUTO'
+          }
+        }
+      }
+    });
+
+    await prisma.formField.createMany({
+      data: [
+        {
+          registrationLinkId: link.id,
+          key: 'code',
+          label: 'Code',
+          type: 'TEXT',
+          required: true,
+          position: 1,
+          minLength: 3,
+          maxLength: 5,
+          pattern: '^[A-Z]+$'
+        },
+        {
+          registrationLinkId: link.id,
+          key: 'terms',
+          label: 'Accept Terms',
+          type: 'CHECKBOX',
+          required: true,
+          position: 2
+        },
+        {
+          registrationLinkId: link.id,
+          key: 'score',
+          label: 'Score',
+          type: 'NUMBER',
+          required: true,
+          position: 3,
+          minValue: 10,
+          maxValue: 20
+        }
+      ]
+    });
+
+    const missingRequired = await request(app.getHttpServer())
+      .post('/public/register/strict-event/submissions')
+      .send({
+        fullName: 'Test User',
+        email: 'test1@example.com',
+        consentAccepted: true,
+        consentPolicyVersion: 'v1',
+        captchaToken: 'dev-token-123',
+        responses: [
+          { key: 'terms', value: true },
+          { key: 'score', value: 15 }
+        ]
+      });
+
+    expect(missingRequired.status).toBe(400);
+
+    const invalidPattern = await request(app.getHttpServer())
+      .post('/public/register/strict-event/submissions')
+      .send({
+        fullName: 'Test User',
+        email: 'test2@example.com',
+        consentAccepted: true,
+        consentPolicyVersion: 'v1',
+        captchaToken: 'dev-token-123',
+        responses: [
+          { key: 'code', value: 'ab' },
+          { key: 'terms', value: true },
+          { key: 'score', value: 15 }
+        ]
+      });
+
+    expect(invalidPattern.status).toBe(400);
+
+    const invalidNumber = await request(app.getHttpServer())
+      .post('/public/register/strict-event/submissions')
+      .send({
+        fullName: 'Test User',
+        email: 'test3@example.com',
+        consentAccepted: true,
+        consentPolicyVersion: 'v1',
+        captchaToken: 'dev-token-123',
+        responses: [
+          { key: 'code', value: 'ABC' },
+          { key: 'terms', value: true },
+          { key: 'score', value: 7 }
+        ]
+      });
+
+    expect(invalidNumber.status).toBe(400);
+
+    const invalidCheckbox = await request(app.getHttpServer())
+      .post('/public/register/strict-event/submissions')
+      .send({
+        fullName: 'Test User',
+        email: 'test4@example.com',
+        consentAccepted: true,
+        consentPolicyVersion: 'v1',
+        captchaToken: 'dev-token-123',
+        responses: [
+          { key: 'code', value: 'ABCD' },
+          { key: 'terms', value: false },
+          { key: 'score', value: 12 }
+        ]
+      });
+
+    expect(invalidCheckbox.status).toBe(400);
+
+    const unknownField = await request(app.getHttpServer())
+      .post('/public/register/strict-event/submissions')
+      .send({
+        fullName: 'Test User',
+        email: 'test5@example.com',
+        consentAccepted: true,
+        consentPolicyVersion: 'v1',
+        captchaToken: 'dev-token-123',
+        responses: [
+          { key: 'code', value: 'ABCD' },
+          { key: 'terms', value: true },
+          { key: 'score', value: 12 },
+          { key: 'unknown', value: 'x' }
+        ]
+      });
+
+    expect(unknownField.status).toBe(400);
   });
 });

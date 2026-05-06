@@ -16,6 +16,14 @@ export class RegistrationsController {
     return this.registrationsService.retrieve(referenceCode, email);
   }
 
+  @Get('badge')
+  async getBadge(
+    @Query('referenceCode') referenceCode: string,
+    @Query('email') email: string
+  ) {
+    return this.registrationsService.getBadge(referenceCode, email);
+  }
+
   @Get(':slug')
   async resolveLink(@Param('slug') slug: string) {
     return this.registrationsService.resolveLink(slug);

@@ -67,3 +67,8 @@ Mitigation: Add layered bot and rate controls.
 1. Registrant portal v1.
 2. Dynamic registration pipeline.
 3. Confirmation and re-download workflows.
+
+## Remaining Tasks
+
+1. Implement real confirmation email delivery in the queue worker (replace logging-only behavior with SMTP/provider send and delivery retry handling).
+2. Enforce production CAPTCHA verification (require configured provider verification outside development and remove permissive fallback behavior in production environments).

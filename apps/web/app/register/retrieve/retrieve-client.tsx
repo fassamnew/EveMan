@@ -31,6 +31,34 @@ export default function RetrieveClient() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<RetrievalResult | null>(null);
 
+  async function onDownloadBadge() {
+    if (!result) {
+      return;
+    }
+
+    const url = new URL(`${API_BASE}/public/register/badge`);
+    url.searchParams.set('referenceCode', result.referenceCode);
+    url.searchParams.set('email', result.email);
+
+    const response = await fetch(url.toString());
+    const payload = (await response.json().catch(() => ({}))) as { badgeText?: string; message?: string };
+
+    if (!response.ok || !payload.badgeText) {
+      setError(payload.message || 'Unable to download badge.');
+      return;
+    }
+
+    const blob = new Blob([payload.badgeText], { type: 'text/plain;charset=utf-8' });
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = `badge-${result.referenceCode}.txt`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
@@ -88,6 +116,13 @@ export default function RetrieveClient() {
             <p className="text-sm">Link: {result.link.title}</p>
             <p className="mt-2 text-xs text-emerald-200">Reference: {result.referenceCode}</p>
             <p className="mt-2 text-xs text-emerald-300">Badge re-download URL: {result.badgeRedownloadUrl}</p>
+            <button
+              type="button"
+              onClick={() => void onDownloadBadge()}
+              className="mt-3 rounded border border-emerald-300 px-3 py-1 text-sm text-emerald-100"
+            >
+              Download badge ticket
+            </button>
           </div>
         ) : null}
       </div>
