@@ -41,15 +41,21 @@ Completed in code and integration tests:
 5. Backlog item 5: duplicate handling strategies (skip/update/flag) during imports.
 6. Backlog item 6: communication template CRUD for email and SMS content.
 7. Backlog item 7: bulk send API and queued delivery worker with failure simulation support.
+8. Backlog item 8: organization portal UI for attendee ops, imports, and communications.
 
 In progress:
-1. Backlog item 8: organization portal UI for attendee ops, imports, and communications.
+1. No remaining backlog items.
 
 ## Security and Compliance Requirements
 
 1. Enforce export/import permission checks by role.
 2. Validate uploaded file type and scan for malware.
 3. Record communication sender and delivery metadata.
+
+Status:
+1. Implemented: tenant-scoped read access and role-gated write actions, including ORG_STAFF lifecycle operations.
+2. Implemented: source type validation (`CSV`/`XLSX`) and malware signature scanning hook during import ingest.
+3. Implemented: communication logs capture sender identity and delivery metadata; management actions are audit logged.
 
 ## Data Model and API Impacts
 

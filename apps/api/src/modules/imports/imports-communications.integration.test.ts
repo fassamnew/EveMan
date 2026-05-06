@@ -189,11 +189,15 @@ describe.skipIf(!runIntegration)('Phase 5 imports and communications integration
         },
         eventId: event.id,
         registrationLinkId: link.id,
-        rows: [
-          { data: { name: 'New Person', email: 'new@import.com' } },
-          { data: { name: 'Duplicate Person', email: 'existing@import.com' } },
-          { data: { name: 'Broken Person', email: '' } }
-        ]
+        fileContentBase64: Buffer.from(
+          [
+            'name,email',
+            'New Person,new@import.com',
+            'Duplicate Person,existing@import.com',
+            'Broken Person,'
+          ].join('\n'),
+          'utf8'
+        ).toString('base64')
       });
 
     expect(importRes.status).toBe(201);

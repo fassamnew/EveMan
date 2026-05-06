@@ -331,4 +331,61 @@ describe.skipIf(!runIntegration)('Attendees integration (MySQL)', () => {
 
     expect(rendered?.status).toBe('READY');
   });
+
+  it('allows ORG_STAFF to manage attendee lifecycle actions', async () => {
+    const org = await prisma.organization.create({ data: { name: 'Staff Org', code: 'stafforg' } });
+
+    await createOrgUser({
+      email: 'staff@stafforg.com',
+      password: 'StrongPass123!',
+      orgId: org.id,
+      roleName: 'ORG_STAFF'
+    });
+
+    const auth = await loginOrgUser({
+      email: 'staff@stafforg.com',
+      password: 'StrongPass123!',
+      orgId: org.id
+    });
+
+    const event = await prisma.event.create({
+      data: {
+        organizationId: org.id,
+        name: 'Staff Event',
+        status: 'PUBLISHED'
+      }
+    });
+
+    const link = await prisma.registrationLink.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        slug: 'staff-event',
+        title: 'Staff Registration'
+      }
+    });
+
+    const registrant = await prisma.registrant.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        registrationLinkId: link.id,
+        referenceCode: 'STAFF001',
+        email: 'person@staff.com',
+        fullName: 'Staff Person',
+        lifecycleStatus: 'PENDING',
+        consentAccepted: true,
+        consentPolicyVersion: 'v1',
+        consentCapturedAt: new Date()
+      }
+    });
+
+    const approveRes = await request(app.getHttpServer())
+      .post(`/org/${org.code}/attendees/${registrant.id}/approve`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({});
+
+    expect(approveRes.status).toBe(201);
+    expect(approveRes.body.lifecycleStatus).toBe('APPROVED');
+  });
 });

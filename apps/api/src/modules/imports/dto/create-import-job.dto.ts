@@ -36,4 +36,9 @@ export class CreateImportJobDto {
   @ValidateNested({ each: true })
   @Type(() => ImportRowDto)
   rows?: ImportRowDto[];
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  fileContentBase64?: string;
 }

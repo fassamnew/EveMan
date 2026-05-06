@@ -40,8 +40,8 @@ export class AttendeesService {
   }
 
   private assertWriteAccess(orgCode: string, req: RequestWithAuth): void {
-    if (!req.auth || !this.policy.canManageEventSettings(req.auth, orgCode)) {
-      throw new ForbiddenException('ORG_ADMIN role required for attendee lifecycle actions');
+    if (!req.auth || !this.policy.canManageAttendeeOps(req.auth, orgCode)) {
+      throw new ForbiddenException('ORG_ADMIN or ORG_STAFF role required for attendee lifecycle actions');
     }
   }
 

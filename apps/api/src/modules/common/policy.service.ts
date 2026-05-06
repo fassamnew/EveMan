@@ -46,6 +46,14 @@ export class PolicyService {
     return this.hasRole(auth, 'SUPER_ADMIN') || this.hasRole(auth, 'ORG_ADMIN');
   }
 
+  canManageAttendeeOps(auth: AuthContext, targetOrgCode: string): boolean {
+    if (!this.canAccessTenant(auth, targetOrgCode)) {
+      return false;
+    }
+
+    return this.hasRole(auth, 'SUPER_ADMIN') || this.hasRole(auth, 'ORG_ADMIN') || this.hasRole(auth, 'ORG_STAFF');
+  }
+
   getEffectivePermissions(auth: AuthContext): string[] {
     const merged = new Set<string>();
 

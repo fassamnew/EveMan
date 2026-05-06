@@ -192,6 +192,30 @@ export default function OrganizationPortalPage() {
           Manage badge templates
         </button>
       </p>
+      <p>
+        <button
+          type="button"
+          onClick={() => router.push(`/o/${normalizedOrgCode}/attendees`)}
+        >
+          Manage attendees
+        </button>
+      </p>
+      <p>
+        <button
+          type="button"
+          onClick={() => router.push(`/o/${normalizedOrgCode}/imports`)}
+        >
+          Run attendee imports
+        </button>
+      </p>
+      <p>
+        <button
+          type="button"
+          onClick={() => router.push(`/o/${normalizedOrgCode}/communications`)}
+        >
+          Manage communications
+        </button>
+      </p>
       <button
         type="button"
         onClick={() => {

@@ -4,9 +4,10 @@ import {
   Injectable,
   NotFoundException
 } from '@nestjs/common';
-import { CommunicationChannel, CommunicationDeliveryStatus } from '@prisma/client';
+import { AuditOutcome, CommunicationChannel, CommunicationDeliveryStatus } from '@prisma/client';
 import { PrismaService } from '../../infra/db/prisma.service';
 import { getSystemQueue } from '../../infra/queue/queue.provider';
+import { AuditService } from '../common/audit.service';
 import { PolicyService } from '../common/policy.service';
 import type { RequestWithAuth } from '../common/request-with-auth';
 import type { CreateBulkSendDto } from './dto/create-bulk-send.dto';
@@ -17,8 +18,13 @@ import type { UpdateCommunicationTemplateDto } from './dto/update-communication-
 export class CommunicationsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(AuditService) private readonly audit: AuditService,
     @Inject(PolicyService) private readonly policy: PolicyService
   ) {}
+
+  private getIp(req: RequestWithAuth): string | null {
+    return req.ip || null;
+  }
 
   private assertReadAccess(orgCode: string, req: RequestWithAuth): void {
     if (!req.auth || !this.policy.canAccessTenant(req.auth, orgCode)) {
@@ -53,7 +59,7 @@ export class CommunicationsService {
     this.assertWriteAccess(input.orgCode, input.req);
     const org = await this.getOrg(input.orgCode);
 
-    return this.prisma.communicationTemplate.create({
+    const created = await this.prisma.communicationTemplate.create({
       data: {
         organizationId: org.id,
         name: input.dto.name,
@@ -64,6 +70,18 @@ export class CommunicationsService {
         createdByUserId: input.req.auth?.userId || null
       }
     });
+
+    await this.audit.write({
+      actorUserId: input.req.auth?.userId || null,
+      organizationId: org.id,
+      action: 'COMM_TEMPLATE_CREATE',
+      targetType: 'COMMUNICATION_TEMPLATE',
+      targetId: created.id,
+      outcome: AuditOutcome.SUCCESS,
+      ipAddress: this.getIp(input.req)
+    });
+
+    return created;
   }
 
   async listTemplates(input: { orgCode: string; req: RequestWithAuth }) {
@@ -100,7 +118,7 @@ export class CommunicationsService {
       throw new NotFoundException('Communication template not found');
     }
 
-    return this.prisma.communicationTemplate.update({
+    const updated = await this.prisma.communicationTemplate.update({
       where: {
         id: template.id
       },
@@ -112,6 +130,18 @@ export class CommunicationsService {
         isActive: input.dto.isActive
       }
     });
+
+    await this.audit.write({
+      actorUserId: input.req.auth?.userId || null,
+      organizationId: org.id,
+      action: 'COMM_TEMPLATE_UPDATE',
+      targetType: 'COMMUNICATION_TEMPLATE',
+      targetId: updated.id,
+      outcome: AuditOutcome.SUCCESS,
+      ipAddress: this.getIp(input.req)
+    });
+
+    return updated;
   }
 
   async bulkSend(input: {
@@ -187,6 +217,19 @@ export class CommunicationsService {
 
       jobs.push(log.id);
     }
+
+    await this.audit.write({
+      actorUserId: input.req.auth?.userId || null,
+      organizationId: org.id,
+      action: 'COMM_BULK_SEND_QUEUE',
+      targetType: 'COMMUNICATION_TEMPLATE',
+      targetId: template.id,
+      outcome: AuditOutcome.SUCCESS,
+      ipAddress: this.getIp(input.req),
+      metadataJson: {
+        queued: jobs.length
+      }
+    });
 
     return {
       templateId: template.id,
