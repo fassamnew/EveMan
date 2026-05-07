@@ -89,6 +89,16 @@ enum ImportDuplicateStrategy {
   FLAG
 }
 
+enum CheckinSource {
+  MOBILE_ONLINE
+  OFFLINE_SYNC
+}
+
+enum CheckinSyncState {
+  ACCEPTED
+  CONFLICT
+}
+
 model MigrationMetadata {
   id        String   @id @default(uuid())
   key       String   @unique
@@ -119,6 +129,7 @@ model Organization {
   communicationTemplates CommunicationTemplate[]
   communicationLogs CommunicationLog[]
   importJobs ImportJob[]
+  checkins Checkin[]
 
   @@map("organizations")
 }
@@ -142,6 +153,7 @@ model User {
   communicationTemplatesCreated CommunicationTemplate[] @relation("CommunicationTemplateCreatedBy")
   communicationLogsSent CommunicationLog[] @relation("CommunicationLogSender")
   importJobsUploaded  ImportJob[]  @relation("ImportJobUploadedBy")
+  usherCheckins Checkin[] @relation("CheckinUsherUser")
 
   @@map("users")
 }
@@ -248,6 +260,7 @@ model Event {
   registrants    Registrant[]
   badges         Badge[]
   qrCodes        QrCode[]
+  checkins       Checkin[]
 
   @@index([organizationId, createdAt])
   @@map("events")
@@ -343,6 +356,7 @@ model Registrant {
   qrCodes              QrCode[]
   badges               Badge[]
   communicationLogs    CommunicationLog[]
+  checkins             Checkin[]
 
   @@unique([registrationLinkId, email])
   @@index([eventId, createdAt])
@@ -512,4 +526,28 @@ model Badge {
   @@index([registrantId, createdAt])
   @@index([qrCodeId])
   @@map("badges")
+}
+
+model Checkin {
+  id             String           @id @default(uuid())
+  organizationId String
+  eventId        String
+  registrantId   String
+  usherUserId    String?
+  deviceId       String
+  idempotencyKey String
+  source         CheckinSource
+  syncState      CheckinSyncState @default(ACCEPTED)
+  scannedAt      DateTime
+  createdAt      DateTime         @default(now())
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  event          Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  registrant     Registrant       @relation(fields: [registrantId], references: [id], onDelete: Cascade)
+  usherUser      User?            @relation("CheckinUsherUser", fields: [usherUserId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, idempotencyKey])
+  @@unique([eventId, registrantId])
+  @@index([organizationId, createdAt])
+  @@index([usherUserId, createdAt])
+  @@map("checkins")
 }

@@ -32,6 +32,8 @@ import { ImportsController } from './modules/imports/imports.controller';
 import { ImportsService } from './modules/imports/imports.service';
 import { CommunicationsController } from './modules/communications/communications.controller';
 import { CommunicationsService } from './modules/communications/communications.service';
+import { UsherController } from './modules/usher/usher.controller';
+import { UsherService } from './modules/usher/usher.service';
 
 @Module({
   imports: [],
@@ -44,7 +46,8 @@ import { CommunicationsService } from './modules/communications/communications.s
     BadgeQrController,
     AttendeesController,
     ImportsController,
-    CommunicationsController
+    CommunicationsController,
+    UsherController
   ],
   providers: [
     PrismaService,
@@ -62,6 +65,7 @@ import { CommunicationsService } from './modules/communications/communications.s
     AttendeesService,
     ImportsService,
     CommunicationsService,
+    UsherService,
     AccessTokenGuard,
     SuperAdminGuard,
     OrgAccessGuard,

@@ -31,6 +31,20 @@ Release a robust usher mobile app that supports secure scan workflows online and
 7. Implement scan history and sync status screens.
 8. Add device telemetry and crash reporting.
 
+## Implementation Status
+
+Completed in code and integration tests:
+1. Backlog item 1 (foundation): React Native/Expo mobile shell added with secure storage session baseline.
+2. Backlog item 3: usher assignment endpoint implemented (`GET /usher/assignments`).
+3. Backlog item 6 (baseline): idempotent check-in API implemented with duplicate detection (`POST /usher/checkins`).
+
+In progress:
+1. Backlog item 2: full mobile auth + refresh token handling.
+2. Backlog item 4: scanner camera UX and verification state screens.
+3. Backlog item 5: offline queue persistence + retry worker.
+4. Backlog item 7: scan history and sync status screens.
+5. Backlog item 8: telemetry and crash reporting.
+
 ## Security and Compliance Requirements
 
 1. Token storage must use platform secure keystore.

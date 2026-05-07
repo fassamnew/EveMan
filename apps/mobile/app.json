@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "EveMange Usher",
+    "slug": "evemange-usher",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "splash": {
+      "backgroundColor": "#020617"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ]
+  }
+}
