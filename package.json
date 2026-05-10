@@ -16,6 +16,15 @@
     "lint": "npm run lint -w @evemange/config && npm run lint -w @evemange/ui && npm run lint -w @evemange/api && npm run lint -w @evemange/web",
     "test": "npm run test -w @evemange/config && npm run test -w @evemange/ui && npm run test -w @evemange/api",
     "test:integration": "npm run test:integration -w @evemange/api",
+    "test:integration:analytics": "npm run test:integration:analytics -w @evemange/api",
+    "test:integration:analytics:local": "DATABASE_URL=\"$(grep '^DATABASE_URL=' apps/api/.env | cut -d'=' -f2-)\" JWT_ACCESS_SECRET=\"$(grep '^JWT_ACCESS_SECRET=' apps/api/.env | cut -d'=' -f2-)\" JWT_REFRESH_SECRET=\"$(grep '^JWT_REFRESH_SECRET=' apps/api/.env | cut -d'=' -f2-)\" npm run test:integration:analytics",
+    "phase8:drill:backup-restore": "scripts/phase8/backup_restore_drill.sh",
+    "phase8:drill:resilience": "scripts/phase8/resilience_smoke.sh",
+    "phase8:load:baseline": "scripts/phase8/load_baseline.sh",
+    "phase8:security:audit": "scripts/phase8/security_audit.sh",
+    "phase8:security:triage": "scripts/phase8/security_triage_report.sh",
+    "phase8:validate": "npm run typecheck && npm run test && npm run test:integration:analytics:local && npm run phase8:security:audit",
+    "phase8:ops:check": "test -f docs/operations/phase-8-production-readiness-report.md && test -f docs/operations/phase-8-launch-signoff-checklist.md && test -f docs/operations/phase-8-operational-handover.md && test -f sprints/sprint-phase-8-validation-checklist.md",
     "docker:up": "docker compose -f infra/docker-compose.yml up -d",
     "docker:down": "docker compose -f infra/docker-compose.yml down",
     "db:generate": "npm run db:generate -w @evemange/api",
@@ -29,6 +38,11 @@
     "eslint": "^9.17.0",
     "globals": "^15.14.0",
     "typescript-eslint": "^8.18.0"
+  },
+  "overrides": {
+    "multer": "2.1.1",
+    "tar": "7.5.15",
+    "@xmldom/xmldom": "0.9.10"
   },
   "engines": {
     "node": ">=20"

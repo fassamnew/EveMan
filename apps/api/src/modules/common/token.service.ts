@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
-import jwt from 'jsonwebtoken';
+import * as jwt from 'jsonwebtoken';
 import type { AuthContext } from './auth.types';
 import { SecretsService } from './secrets.service';
 

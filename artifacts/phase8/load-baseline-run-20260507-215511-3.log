@@ -1,0 +1,31 @@
+
+> evemange-platform@0.1.0 test:integration:analytics:local
+> DATABASE_URL="$(grep '^DATABASE_URL=' apps/api/.env | cut -d'=' -f2-)" JWT_ACCESS_SECRET="$(grep '^JWT_ACCESS_SECRET=' apps/api/.env | cut -d'=' -f2-)" JWT_REFRESH_SECRET="$(grep '^JWT_REFRESH_SECRET=' apps/api/.env | cut -d'=' -f2-)" npm run test:integration:analytics
+
+
+> evemange-platform@0.1.0 test:integration:analytics
+> npm run test:integration:analytics -w @evemange/api
+
+
+> @evemange/api@0.1.0 test:integration:analytics
+> vitest run src/modules/analytics/analytics.integration.test.ts --fileParallelism=false
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+ RUN  v2.1.9 /Users/fitsum/EventRegistration/EveMange/apps/api
+
+stdout | src/modules/analytics/analytics.integration.test.ts > Analytics dashboard integration (MySQL) > returns dashboard KPIs, trends, event performance, and usher performance
+badge-delivery-link queued for a@analytics.org (Registrant A) on Analytics Event: http://localhost:5001/public/badges/download?path=badges%2F3da828ef-74be-461e-a2d9-4e4584e4ed26%2F4da818d0-b833-43a2-889d-ed1b04eedd61.txt&expires=1778270140091&sig=6f1e3ca1b17f04e16e42a29bb5eb8a5696ca7e77b33f715537cdc13fefd88578
+
+ ✓ src/modules/analytics/analytics.integration.test.ts (6 tests) 4400ms
+   ✓ Analytics dashboard integration (MySQL) > returns dashboard KPIs, trends, event performance, and usher performance 1087ms
+   ✓ Analytics dashboard integration (MySQL) > allows org admin to queue and list export reports 590ms
+   ✓ Analytics dashboard integration (MySQL) > forbids org staff from queueing export reports 482ms
+   ✓ Analytics dashboard integration (MySQL) > generates signed report download link and serves public report artifact 678ms
+   ✓ Analytics dashboard integration (MySQL) > returns consistent analytics under larger seeded dataset within expected response bounds 1237ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  21:55:36
+   Duration  6.35s (transform 392ms, setup 33ms, collect 1.48s, tests 4.40s, environment 0ms, prepare 97ms)
+

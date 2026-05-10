@@ -284,6 +284,7 @@ export class EventsService {
           eventId: event.id,
           slug: dto.slug,
           title: dto.title,
+          linkTypeId: dto.linkTypeId ?? null,
           rule: {
             create: {
               visibility: dto.visibility || 'PUBLIC',
@@ -295,7 +296,8 @@ export class EventsService {
           }
         },
         include: {
-          rule: true
+          rule: true,
+          linkType: true
         }
       });
 
@@ -345,7 +347,8 @@ export class EventsService {
         organizationId: org.id
       },
       include: {
-        rule: true
+        rule: true,
+        linkType: true
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -386,6 +389,7 @@ export class EventsService {
           title: dto.title,
           slug: dto.slug,
           isActive: dto.isActive,
+          linkTypeId: dto.linkTypeId !== undefined ? dto.linkTypeId : undefined,
           rule: {
             upsert: {
               create: {
@@ -406,7 +410,8 @@ export class EventsService {
           }
         },
         include: {
-          rule: true
+          rule: true,
+          linkType: true
         }
       });
 

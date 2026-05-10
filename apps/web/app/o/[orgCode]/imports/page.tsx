@@ -1,8 +1,8 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { loadSession } from '../../../../lib/session';
+import { authFetch } from '../../../../lib/session';
 
 type EventItem = {
   id: string;
@@ -60,33 +60,18 @@ export default function ImportsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function getSessionToken(): string | null {
-    const session = loadSession();
-    if (!session) {
-      router.replace(`/o/${orgCode}`);
-      return null;
-    }
-
-    return session.accessToken;
-  }
+  const onSessionExpired = useCallback(() => {
+    router.replace(`/o/${orgCode}`);
+  }, [orgCode, router]);
 
   async function fetchEventsAndJobs(): Promise<void> {
-    const token = getSessionToken();
-    if (!token) {
-      return;
-    }
-
     setIsLoading(true);
     setError(null);
 
     try {
       const [eventsRes, jobsRes] = await Promise.all([
-        fetch(`${API_BASE}/org/${orgCode}/events`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        fetch(`${API_BASE}/org/${orgCode}/imports/jobs`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
+        authFetch(`${API_BASE}/org/${orgCode}/events`, {}, onSessionExpired),
+        authFetch(`${API_BASE}/org/${orgCode}/imports/jobs`, {}, onSessionExpired)
       ]);
 
       if (!eventsRes.ok || !jobsRes.ok) {
@@ -110,16 +95,15 @@ export default function ImportsPage() {
   }
 
   async function fetchLinks(selectedEventId: string): Promise<void> {
-    const token = getSessionToken();
-    if (!token || !selectedEventId) {
+    if (!selectedEventId) {
       return;
     }
 
-    const linksRes = await fetch(`${API_BASE}/org/${orgCode}/events/${selectedEventId}/links`, {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    });
+    const linksRes = await authFetch(
+      `${API_BASE}/org/${orgCode}/events/${selectedEventId}/links`,
+      {},
+      onSessionExpired
+    );
 
     if (!linksRes.ok) {
       setLinks([]);
@@ -143,7 +127,7 @@ export default function ImportsPage() {
     }
 
     void fetchEventsAndJobs();
-  }, [orgCode]);
+  }, [orgCode, onSessionExpired]);
 
   useEffect(() => {
     if (!eventId) {
@@ -151,15 +135,10 @@ export default function ImportsPage() {
     }
 
     void fetchLinks(eventId);
-  }, [eventId]);
+  }, [eventId, onSessionExpired]);
 
   async function createImportJob(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-
-    const token = getSessionToken();
-    if (!token) {
-      return;
-    }
 
     if (!fileContentBase64) {
       setError('Select a CSV or XLSX file first');
@@ -168,11 +147,10 @@ export default function ImportsPage() {
 
     setError(null);
 
-    const response = await fetch(`${API_BASE}/org/${orgCode}/imports/jobs`, {
+    const response = await authFetch(`${API_BASE}/org/${orgCode}/imports/jobs`, {
       method: 'POST',
       headers: {
-        'content-type': 'application/json',
-        Authorization: `Bearer ${token}`
+        'content-type': 'application/json'
       },
       body: JSON.stringify({
         sourceFilename,
@@ -186,7 +164,7 @@ export default function ImportsPage() {
         registrationLinkId,
         fileContentBase64
       })
-    });
+    }, onSessionExpired);
 
     if (!response.ok) {
       const payload = (await response.json().catch(() => ({}))) as { message?: string };
@@ -224,18 +202,13 @@ export default function ImportsPage() {
   }
 
   async function loadErrors(jobId: string): Promise<void> {
-    const token = getSessionToken();
-    if (!token) {
-      return;
-    }
-
     setSelectedJobId(jobId);
 
-    const response = await fetch(`${API_BASE}/org/${orgCode}/imports/jobs/${jobId}/errors`, {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    });
+    const response = await authFetch(
+      `${API_BASE}/org/${orgCode}/imports/jobs/${jobId}/errors`,
+      {},
+      onSessionExpired
+    );
 
     if (!response.ok) {
       setErrors([]);
@@ -329,6 +302,30 @@ export default function ImportsPage() {
               placeholder="email column"
               className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
             />
+          </div>
+
+          <div className="md:col-span-2 rounded-lg border border-cyan-700/40 bg-cyan-950/20 px-3 py-3 text-sm">
+            <p className="font-semibold text-cyan-200">CSV format guide</p>
+            <p className="mt-1 text-slate-300">
+              Your file must have a header row. The column names should match the mapping fields below.
+            </p>
+            <p className="mt-2 text-slate-300">
+              Expected headers right now:
+              <span className="ml-2 rounded bg-slate-900 px-2 py-0.5 font-mono text-xs text-cyan-200">
+                {mappingFullName || 'name'}
+              </span>
+              <span className="ml-2 rounded bg-slate-900 px-2 py-0.5 font-mono text-xs text-cyan-200">
+                {mappingEmail || 'email'}
+              </span>
+            </p>
+            <div className="mt-3 overflow-x-auto rounded border border-slate-700 bg-slate-950/80 p-3 font-mono text-xs text-slate-200">
+              <p>{`${mappingFullName || 'name'},${mappingEmail || 'email'}`}</p>
+              <p>Abel Tesfaye,abel@example.com</p>
+              <p>Sara Demissie,sara@example.com</p>
+            </div>
+            <p className="mt-2 text-xs text-slate-400">
+              For XLSX files, use the same header names in the first row.
+            </p>
           </div>
 
           <div className="md:col-span-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-3">

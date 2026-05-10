@@ -11,8 +11,8 @@ export class CreateImportJobDto {
   @MinLength(1)
   sourceFilename!: string;
 
-  @IsIn(['CSV', 'XLSX'])
-  sourceFileType!: 'CSV' | 'XLSX';
+  @IsIn(['CSV'])
+  sourceFileType!: 'CSV';
 
   @IsIn(['SKIP', 'UPDATE', 'FLAG'])
   duplicateStrategy!: 'SKIP' | 'UPDATE' | 'FLAG';

@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:integration": "vitest run src/modules/**/*.integration.test.ts --fileParallelism=false",
+    "test:integration:analytics": "vitest run src/modules/analytics/analytics.integration.test.ts --fileParallelism=false",
     "db:generate": "prisma generate",
     "db:migrate:dev": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
@@ -39,8 +40,7 @@
     "ioredis": "^5.4.1",
     "jsonwebtoken": "^9.0.2",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1",
-    "xlsx": "^0.18.5"
+    "rxjs": "^7.8.1"
   },
   "devDependencies": {
     "@nestjs/testing": "^10.4.5",

@@ -1,4 +1,4 @@
-import { IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min } from 'class-validator';
 
 export class UpdateLinkDto {
   @IsOptional()
@@ -15,6 +15,10 @@ export class UpdateLinkDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsUUID()
+  linkTypeId?: string | null;
 
   @IsOptional()
   @IsIn(['PUBLIC', 'UNLISTED', 'PRIVATE'])

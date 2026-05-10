@@ -1,0 +1,7 @@
+EveMange Badge
+Badge ID: 2fff180b-13cc-479e-a208-7694fee6ad71
+Template: default
+Name: Registrant A
+Email: a@analytics.org
+Event: Analytics Event
+QR Code ID: dfee4d38-ce24-4461-8085-dabbfc4d474f

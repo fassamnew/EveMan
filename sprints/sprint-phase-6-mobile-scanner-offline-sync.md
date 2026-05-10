@@ -35,15 +35,15 @@ Release a robust usher mobile app that supports secure scan workflows online and
 
 Completed in code and integration tests:
 1. Backlog item 1 (foundation): React Native/Expo mobile shell added with secure storage session baseline.
-2. Backlog item 3: usher assignment endpoint implemented (`GET /usher/assignments`).
-3. Backlog item 6 (baseline): idempotent check-in API implemented with duplicate detection (`POST /usher/checkins`).
+2. Backlog item 2: mobile auth login/logout with refresh-token rotation and secure session persistence.
+3. Backlog item 3: usher assignment endpoint implemented (`GET /usher/assignments`).
+4. Backlog item 6 (baseline): idempotent check-in API implemented with duplicate detection (`POST /usher/checkins`).
 
 In progress:
-1. Backlog item 2: full mobile auth + refresh token handling.
-2. Backlog item 4: scanner camera UX and verification state screens.
-3. Backlog item 5: offline queue persistence + retry worker.
-4. Backlog item 7: scan history and sync status screens.
-5. Backlog item 8: telemetry and crash reporting.
+1. Backlog item 4: scanner camera + verification-state baseline implemented in mobile app; production UX polish and resilience pending.
+2. Backlog item 5: offline queue persistence + retry worker hardened with retry backoff/max-attempt drops, periodic auto-sync, encrypted-at-rest queue payloads, background fetch execution baseline, and sync diagnostics export; device reliability validation pending.
+3. Backlog item 7: dedicated in-app history view and export workflow implemented, with sync-state grouping and filters.
+4. Backlog item 8: telemetry and crash-reporting baseline extended with export and configurable endpoint upload integration; production telemetry backend validation pending.
 
 ## Security and Compliance Requirements
 
@@ -80,3 +80,7 @@ Mitigation: Checksums and replay-safe idempotency keys.
 1. Mobile usher app v1.
 2. Offline sync engine.
 3. Check-in API hardening for mobile workloads.
+
+## Validation Checklist
+
+1. Execute closeout verification using `sprints/sprint-phase-6-validation-checklist.md`.

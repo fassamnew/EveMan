@@ -7,6 +7,21 @@
     "splash": {
       "backgroundColor": "#020617"
     },
+    "ios": {
+      "infoPlist": {
+        "NSCameraUsageDescription": "EveMange uses the camera to scan attendee QR codes for check-ins.",
+        "UIBackgroundModes": [
+          "fetch"
+        ]
+      }
+    },
+    "android": {
+      "permissions": [
+        "CAMERA",
+        "RECEIVE_BOOT_COMPLETED",
+        "WAKE_LOCK"
+      ]
+    },
     "assetBundlePatterns": [
       "**/*"
     ]

@@ -1,7 +1,6 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditOutcome, ImportDuplicateStrategy, Prisma } from '@prisma/client';
 import { parse as parseCsv } from 'csv-parse/sync';
-import * as XLSX from 'xlsx';
 import { PrismaService } from '../../infra/db/prisma.service';
 import { getSystemQueue } from '../../infra/queue/queue.provider';
 import { AuditService } from '../common/audit.service';
@@ -55,19 +54,7 @@ export class ImportsService {
       return records.map(item => ({ data: item }));
     }
 
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
-    const firstSheetName = workbook.SheetNames[0];
-    if (!firstSheetName) {
-      return [];
-    }
-
-    const worksheet = workbook.Sheets[firstSheetName];
-    const records = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
-      defval: '',
-      raw: false
-    });
-
-    return records.map(item => ({ data: item }));
+    throw new BadRequestException('Only CSV sourceFileType is supported in current hardening mode');
   }
 
   private resolveRows(dto: CreateImportJobDto): Array<{ data: Record<string, unknown> }> {
@@ -80,7 +67,7 @@ export class ImportsService {
       return fileRows;
     }
 
-    throw new BadRequestException('Provide either rows or fileContentBase64 with parsable CSV/XLSX data');
+    throw new BadRequestException('Provide either rows or fileContentBase64 with parsable CSV data');
   }
 
   private validateMapping(rows: Array<{ data: Record<string, unknown> }>, dto: CreateImportJobDto): void {

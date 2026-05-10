@@ -1,0 +1,9 @@
+phase8_security_audit_status=PASS
+timestamp=20260507-220831
+npm_audit_exit_code=1
+critical=0
+high=3
+moderate=16
+low=0
+total=19
+raw_report=/Users/fitsum/EventRegistration/EveMange/artifacts/phase8/security-audit-raw-20260507-220831.json

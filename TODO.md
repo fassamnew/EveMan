@@ -68,6 +68,22 @@ The items below are the "V1" legacy features which will be refactored into the n
 - [ ] **Export Engine**: Per-event and per-link CSV/Excel reporting.
 - [ ] **Bulk Communication 2.0**: Event-specific manual/scheduled emails.
 
+### Section 3.1: Super Admin Portal Features [IN PROGRESS]
+- [x] **Manage Organizers**: List organizations and create organizations.
+- [x] **Edit/Suspend Organizer Accounts**: Super-admin organization update endpoint for name/code/isActive.
+- [x] **View All Events Across Organizers**: Platform-wide event list endpoint.
+- [x] **Manage System Users**: Platform user listing and active-status toggle endpoint.
+- [x] **Configure Email/SMS Settings**: Super-admin communications config get/update endpoints.
+- [x] **View Platform-wide Analytics**: Platform overview metrics endpoint.
+- [x] **Audit System Activity**: Super-admin audit log listing endpoint.
+- [x] **Backup and Restore Data Visibility**: Backup/restore artifact listing endpoint.
+- [x] **Manage Subscription/Licensing Config**: Super-admin subscription config get/update endpoints.
+- [x] **Manage Global Badge Templates**: Global badge template catalog get/update endpoints.
+- [x] **Manage Global Registration Page Templates**: Global registration template catalog get/update endpoints.
+- [x] **Super Admin UI Completion**: Dashboard now exposes platform overview, events, system users, audit logs, backup visibility, and JSON editors for all section 3.1 settings/template endpoints.
+- [ ] **Operational Actions**: Add guarded API workflow for triggering backup/restore drill from portal.
+- [x] **E2E Tests**: Added API integration coverage for all current super-admin section 3.1 routes in `apps/api/src/modules/super-admin/super-admin.integration.test.ts`.
+
 ---
 
 ### Phase 6: Production Readiness & Scale

@@ -54,6 +54,17 @@ export class AuthService {
     });
   }
 
+  async unlockAccount(email: string): Promise<{ unlocked: true; email: string }> {
+    const normalized = this.normalizeEmail(email);
+    const user = await this.prisma.user.findUnique({ where: { email: normalized }, select: { id: true, email: true } });
+    if (!user) throw new UnauthorizedException('User not found');
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { failedLoginCount: 0, lockedUntil: null }
+    });
+    return { unlocked: true, email: user.email };
+  }
+
   private async clearLoginFailures(userId: string): Promise<void> {
     await this.prisma.user.update({
       where: { id: userId },

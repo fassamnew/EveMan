@@ -3,6 +3,7 @@ import {
   Controller,
   HttpCode,
   Inject,
+  Param,
   Post,
   Req,
   UseGuards
@@ -14,6 +15,8 @@ import { LogoutDto } from './dto/logout.dto';
 import { PasswordResetInitiateDto } from './dto/password-reset-initiate.dto';
 import type { RequestWithAuth } from '../common/request-with-auth';
 import { AuthRateLimitGuard } from '../common/guards/auth-rate-limit.guard';
+import { AccessTokenGuard } from '../common/guards/access-token.guard';
+import { SuperAdminGuard } from '../common/guards/super-admin.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -46,5 +49,12 @@ export class AuthController {
   ): Promise<{ accepted: true }> {
     await this.authService.initiatePasswordReset(dto.email, req);
     return { accepted: true };
+  }
+
+  @HttpCode(200)
+  @UseGuards(AccessTokenGuard, SuperAdminGuard)
+  @Post('admin/unlock/:email')
+  async unlockAccount(@Param('email') email: string) {
+    return this.authService.unlockAccount(email);
   }
 }

@@ -354,9 +354,11 @@ describe.skipIf(!runIntegration)('Badge QR integration (MySQL)', () => {
   it('moves final render failures to dead-letter and emits alert metrics', async () => {
     const previousRoot = process.env.BADGE_STORAGE_ROOT;
     const previousAlertThreshold = process.env.BADGE_RENDER_ALERT_FAILURE_STREAK;
+    const previousBucket = process.env.S3_BUCKET;
 
     process.env.BADGE_STORAGE_ROOT = '/dev/null';
     process.env.BADGE_RENDER_ALERT_FAILURE_STREAK = '1';
+    delete process.env.S3_BUCKET;
 
     try {
       const org = await prisma.organization.create({ data: { name: 'Failcase', code: 'failcase' } });
@@ -450,6 +452,12 @@ describe.skipIf(!runIntegration)('Badge QR integration (MySQL)', () => {
         delete process.env.BADGE_RENDER_ALERT_FAILURE_STREAK;
       } else {
         process.env.BADGE_RENDER_ALERT_FAILURE_STREAK = previousAlertThreshold;
+      }
+
+      if (previousBucket === undefined) {
+        delete process.env.S3_BUCKET;
+      } else {
+        process.env.S3_BUCKET = previousBucket;
       }
     }
   });

@@ -34,6 +34,10 @@ import { CommunicationsController } from './modules/communications/communication
 import { CommunicationsService } from './modules/communications/communications.service';
 import { UsherController } from './modules/usher/usher.controller';
 import { UsherService } from './modules/usher/usher.service';
+import { AnalyticsController } from './modules/analytics/analytics.controller';
+import { AnalyticsService } from './modules/analytics/analytics.service';
+import { SuperAdminController } from './modules/super-admin/super-admin.controller';
+import { SuperAdminService } from './modules/super-admin/super-admin.service';
 
 @Module({
   imports: [],
@@ -47,7 +51,9 @@ import { UsherService } from './modules/usher/usher.service';
     AttendeesController,
     ImportsController,
     CommunicationsController,
-    UsherController
+    UsherController,
+    AnalyticsController,
+    SuperAdminController
   ],
   providers: [
     PrismaService,
@@ -66,6 +72,8 @@ import { UsherService } from './modules/usher/usher.service';
     ImportsService,
     CommunicationsService,
     UsherService,
+    AnalyticsService,
+    SuperAdminService,
     AccessTokenGuard,
     SuperAdminGuard,
     OrgAccessGuard,

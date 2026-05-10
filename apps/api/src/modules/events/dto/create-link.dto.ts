@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min } from 'class-validator';
 
 export class CreateLinkDto {
   @IsString()
@@ -9,6 +9,10 @@ export class CreateLinkDto {
   @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
   @MaxLength(80)
   slug!: string;
+
+  @IsOptional()
+  @IsUUID()
+  linkTypeId?: string;
 
   @IsOptional()
   @IsIn(['PUBLIC', 'UNLISTED', 'PRIVATE'])

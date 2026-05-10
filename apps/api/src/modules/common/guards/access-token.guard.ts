@@ -19,7 +19,13 @@ export class AccessTokenGuard implements CanActivate {
       throw new UnauthorizedException('Missing bearer token');
     }
 
-    const payload = this.tokenService.verifyAccessToken(token);
+    let payload: ReturnType<TokenService['verifyAccessToken']>;
+    try {
+      payload = this.tokenService.verifyAccessToken(token);
+    } catch {
+      throw new UnauthorizedException('Invalid or expired access token');
+    }
+
     req.auth = {
       userId: payload.sub,
       email: payload.email,

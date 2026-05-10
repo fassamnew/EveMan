@@ -1,258 +1,384 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { loadSession } from '../../../../lib/session';
+import { authFetch, loadSession } from '../../../../lib/session';
 
 type EventItem = {
   id: string;
   name: string;
+  description: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
   status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
   createdAt: string;
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
 
+const STATUS_LABELS: Record<string, string> = {
+  DRAFT: 'Draft',
+  PUBLISHED: 'Published',
+  ARCHIVED: 'Archived'
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  DRAFT: 'text-amber-300 bg-amber-500/10 border-amber-500/30',
+  PUBLISHED: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30',
+  ARCHIVED: 'text-slate-400 bg-slate-700/30 border-slate-600/30'
+};
+
+function formatDateTime(iso: string | null): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function toDatetimeLocal(iso: string | null): string {
+  if (!iso) return '';
+  // format: YYYY-MM-DDTHH:MM
+  return iso.slice(0, 16);
+}
+
 export default function OrgEventsPage() {
   const router = useRouter();
   const params = useParams<{ orgCode: string }>();
-  const orgCode = params.orgCode;
+  const orgCode = typeof params.orgCode === 'string' ? params.orgCode : '';
+
   const [events, setEvents] = useState<EventItem[]>([]);
-  const [name, setName] = useState('');
-  const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [pageError, setPageError] = useState<string | null>(null);
 
-  function inputValue(id: string): string {
-    const input = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
-    return input?.value || '';
-  }
+  // Create form state
+  const [showCreate, setShowCreate] = useState(false);
+  const [createName, setCreateName] = useState('');
+  const [createDesc, setCreateDesc] = useState('');
+  const [createStartsAt, setCreateStartsAt] = useState('');
+  const [createEndsAt, setCreateEndsAt] = useState('');
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
 
-  async function fetchEvents(): Promise<void> {
+  // Edit state (one at a time)
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [editStartsAt, setEditStartsAt] = useState('');
+  const [editEndsAt, setEditEndsAt] = useState('');
+  const [editStatus, setEditStatus] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const onSessionExpired = useCallback(() => router.replace(`/o/${orgCode}`), [orgCode, router]);
+
+  const fetchEvents = useCallback(async () => {
     const session = loadSession();
-    if (!session) {
-      router.replace(`/o/${orgCode}`);
-      return;
-    }
-
-    if (session.organizationCode !== orgCode && !session.roles.includes('SUPER_ADMIN')) {
-      router.replace(`/o/${orgCode}`);
-      return;
-    }
+    if (!session) { router.replace(`/o/${orgCode}`); return; }
 
     setIsLoading(true);
-    setError(null);
-
+    setPageError(null);
     try {
-      const response = await fetch(`${API_BASE}/org/${orgCode}/events`, {
-        headers: {
-          Authorization: `Bearer ${session.accessToken}`
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to load events');
-      }
-
-      const payload = (await response.json()) as EventItem[];
-      setEvents(payload);
+      const res = await authFetch(`${API_BASE}/org/${orgCode}/events`, {}, onSessionExpired);
+      if (!res.ok) throw new Error('Failed to load events');
+      setEvents(await res.json() as EventItem[]);
     } catch {
-      setError('Unable to load events');
+      setPageError('Unable to load events');
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [orgCode, router, onSessionExpired]);
 
-  useEffect(() => {
-    if (!orgCode) {
-      return;
-    }
+  useEffect(() => { if (orgCode) void fetchEvents(); }, [orgCode, fetchEvents]);
 
-    void fetchEvents();
-  }, [orgCode]);
-
-  async function onCreate(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const session = loadSession();
-    if (!session) {
-      return;
-    }
-
+  async function onCreate(e: FormEvent) {
+    e.preventDefault();
+    setCreateError(null);
+    setIsCreating(true);
     try {
-      const response = await fetch(`${API_BASE}/org/${orgCode}/events`, {
+      const res = await authFetch(`${API_BASE}/org/${orgCode}/events`, {
         method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          Authorization: `Bearer ${session.accessToken}`
-        },
-        body: JSON.stringify({ name })
-      });
-
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as { message?: string };
-        setError(payload.message || 'Failed to create event');
-        return;
-      }
-
-      setName('');
-      await fetchEvents();
-    } catch {
-      setError('Network error while creating event');
-    }
-  }
-
-  async function onUpdateEvent(eventId: string) {
-    const session = loadSession();
-    if (!session) {
-      return;
-    }
-
-    setError(null);
-    const nameValue = inputValue(`event-name-${eventId}`);
-    const statusValue = inputValue(`event-status-${eventId}`);
-
-    try {
-      const response = await fetch(`${API_BASE}/org/${orgCode}/events/${eventId}`, {
-        method: 'PATCH',
-        headers: {
-          'content-type': 'application/json',
-          Authorization: `Bearer ${session.accessToken}`
-        },
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          name: nameValue,
-          status: statusValue
+          name: createName.trim(),
+          description: createDesc.trim() || undefined,
+          startsAt: createStartsAt || undefined,
+          endsAt: createEndsAt || undefined
         })
-      });
+      }, onSessionExpired);
 
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as { message?: string };
-        setError(payload.message || 'Failed to update event');
+      if (!res.ok) {
+        const p = (await res.json().catch(() => ({}))) as { message?: string | string[] };
+        setCreateError(Array.isArray(p.message) ? p.message.join(', ') : (p.message || 'Failed to create event'));
         return;
       }
-
+      setShowCreate(false);
+      setCreateName(''); setCreateDesc(''); setCreateStartsAt(''); setCreateEndsAt('');
       await fetchEvents();
     } catch {
-      setError('Network error while updating event');
+      setCreateError('Network error');
+    } finally {
+      setIsCreating(false);
     }
   }
 
-  async function onArchiveEvent(eventId: string) {
-    const session = loadSession();
-    if (!session) {
-      return;
-    }
+  function openEdit(item: EventItem) {
+    setEditId(item.id);
+    setEditName(item.name);
+    setEditDesc(item.description ?? '');
+    setEditStartsAt(toDatetimeLocal(item.startsAt));
+    setEditEndsAt(toDatetimeLocal(item.endsAt));
+    setEditStatus(item.status);
+    setEditError(null);
+  }
 
-    setError(null);
-
+  async function onSaveEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!editId) return;
+    setEditError(null);
+    setIsSaving(true);
     try {
-      const response = await fetch(`${API_BASE}/org/${orgCode}/events/${eventId}/archive`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${session.accessToken}`
-        }
-      });
+      const res = await authFetch(`${API_BASE}/org/${orgCode}/events/${editId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: editName.trim(),
+          description: editDesc.trim() || undefined,
+          startsAt: editStartsAt || undefined,
+          endsAt: editEndsAt || undefined,
+          status: editStatus
+        })
+      }, onSessionExpired);
 
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as { message?: string };
-        setError(payload.message || 'Failed to archive event');
+      if (!res.ok) {
+        const p = (await res.json().catch(() => ({}))) as { message?: string | string[] };
+        setEditError(Array.isArray(p.message) ? p.message.join(', ') : (p.message || 'Failed to save'));
         return;
       }
-
+      setEditId(null);
       await fetchEvents();
     } catch {
-      setError('Network error while archiving event');
+      setEditError('Network error');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function onArchive(eventId: string) {
+    try {
+      const res = await authFetch(`${API_BASE}/org/${orgCode}/events/${eventId}/archive`, {
+        method: 'POST'
+      }, onSessionExpired);
+      if (!res.ok) {
+        const p = (await res.json().catch(() => ({}))) as { message?: string };
+        setPageError(p.message || 'Failed to archive event');
+        return;
+      }
+      await fetchEvents();
+    } catch {
+      setPageError('Network error while archiving');
     }
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100">
+    <main className="min-h-screen bg-slate-950 px-6 py-8 text-slate-100">
       <div className="mx-auto max-w-5xl">
-        <div className="mb-6 flex items-center justify-between">
-          <h1 className="text-3xl font-semibold tracking-tight">Event Management</h1>
+        {/* Header */}
+        <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <button
+              type="button"
+              onClick={() => router.push(`/o/${orgCode}`)}
+              className="mb-1 text-xs text-slate-400 hover:text-slate-200"
+            >
+              ← Back to portal
+            </button>
+            <h1 className="text-2xl font-semibold tracking-tight">Events</h1>
+          </div>
           <button
             type="button"
-            onClick={() => router.push(`/o/${orgCode}`)}
-            className="rounded-lg border border-slate-700 px-3 py-1 text-sm"
+            onClick={() => { setShowCreate(v => !v); setCreateError(null); }}
+            className="rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-300 transition"
           >
-            Back to portal
+            {showCreate ? 'Cancel' : '+ New event'}
           </button>
-        </div>
+        </header>
 
-        <form onSubmit={onCreate} className="mb-6 grid gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4 md:grid-cols-[1fr_auto]">
-          <input
-            value={name}
-            onChange={event => setName(event.target.value)}
-            required
-            placeholder="New event name"
-            className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
-          />
-          <button
-            type="submit"
-            className="rounded-lg bg-cyan-400 px-4 py-2 font-semibold text-slate-950"
-          >
-            Create event
-          </button>
-        </form>
+        {pageError && (
+          <p className="mb-4 rounded-lg border border-rose-500/40 bg-rose-950/40 px-4 py-3 text-sm text-rose-300">{pageError}</p>
+        )}
 
-        {error ? <p className="mb-4 text-sm text-red-300">{error}</p> : null}
+        {/* Create form */}
+        {showCreate && (
+          <form onSubmit={onCreate} className="mb-6 rounded-2xl border border-cyan-500/30 bg-slate-900/70 p-5">
+            <h2 className="mb-4 text-base font-semibold text-cyan-200">New event</h2>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="col-span-full grid gap-1 text-sm">
+                <span className="text-slate-300">Event name <span className="text-rose-400">*</span></span>
+                <input
+                  value={createName}
+                  onChange={e => setCreateName(e.target.value)}
+                  required maxLength={160}
+                  placeholder="e.g. Annual Tech Summit 2026"
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring"
+                />
+              </label>
+              <label className="col-span-full grid gap-1 text-sm">
+                <span className="text-slate-300">Description</span>
+                <textarea
+                  value={createDesc}
+                  onChange={e => setCreateDesc(e.target.value)}
+                  maxLength={500} rows={3}
+                  placeholder="Brief description of the event (optional)"
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring resize-none"
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                <span className="text-slate-300">Start date &amp; time</span>
+                <input
+                  type="datetime-local"
+                  value={createStartsAt}
+                  onChange={e => setCreateStartsAt(e.target.value)}
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring [color-scheme:dark]"
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                <span className="text-slate-300">End date &amp; time</span>
+                <input
+                  type="datetime-local"
+                  value={createEndsAt}
+                  onChange={e => setCreateEndsAt(e.target.value)}
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring [color-scheme:dark]"
+                />
+              </label>
+            </div>
+            {createError && <p className="mt-3 text-sm text-rose-300">{createError}</p>}
+            <div className="mt-4 flex gap-2">
+              <button
+                type="submit"
+                disabled={isCreating}
+                className="rounded-lg bg-cyan-400 px-5 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-300 disabled:opacity-60 disabled:cursor-not-allowed transition"
+              >
+                {isCreating ? 'Creating…' : 'Create event'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCreate(false)}
+                className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
 
-        <section className="rounded-xl border border-slate-800 bg-slate-900/60">
-          <div className="border-b border-slate-800 px-4 py-3 text-sm font-semibold">Events</div>
-          {isLoading ? <p className="px-4 py-4 text-sm text-slate-300">Loading...</p> : null}
-          {!isLoading && events.length === 0 ? (
-            <p className="px-4 py-4 text-sm text-slate-300">No events yet.</p>
-          ) : null}
-          {!isLoading && events.length > 0 ? (
-            <ul>
-              {events.map(item => (
-                <li key={item.id} className="border-t border-slate-800 px-4 py-3 text-sm">
-                  <div className="grid gap-3 md:grid-cols-[2fr_1fr_1fr_auto_auto_auto] md:items-center">
-                    <input
-                      id={`event-name-${item.id}`}
-                      defaultValue={item.name}
-                      className="rounded border border-slate-700 bg-slate-950 px-2 py-1"
-                    />
-                    <select
-                      id={`event-status-${item.id}`}
-                      defaultValue={item.status}
-                      className="rounded border border-slate-700 bg-slate-950 px-2 py-1"
-                      disabled={item.status === 'ARCHIVED'}
-                    >
-                      <option value="DRAFT">DRAFT</option>
-                      <option value="PUBLISHED">PUBLISHED</option>
-                    </select>
-                    <p className="text-xs text-slate-400">
-                      Created {new Date(item.createdAt).toLocaleString()}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => void onUpdateEvent(item.id)}
-                      disabled={item.status === 'ARCHIVED'}
-                      className="rounded-md border border-cyan-500 px-3 py-1 text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      Save
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void onArchiveEvent(item.id)}
-                      disabled={item.status === 'ARCHIVED'}
-                      className="rounded-md border border-amber-400 px-3 py-1 text-amber-200 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      Archive
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => router.push(`/o/${orgCode}/events/${item.id}/links`)}
-                      className="rounded-md border border-slate-700 px-3 py-1"
-                    >
-                      Manage links
-                    </button>
+        {/* Events list */}
+        <section className="rounded-2xl border border-slate-800 bg-slate-900/60">
+          <div className="border-b border-slate-800 px-5 py-3 text-sm font-semibold text-slate-300">
+            {events.length} event{events.length !== 1 ? 's' : ''}
+          </div>
+
+          {isLoading && <p className="px-5 py-6 text-sm text-slate-400">Loading…</p>}
+          {!isLoading && events.length === 0 && (
+            <p className="px-5 py-6 text-sm text-slate-400">No events yet. Create one above.</p>
+          )}
+
+          <ul>
+            {events.map(item => (
+              <li key={item.id} className="border-t border-slate-800">
+                {editId === item.id ? (
+                  /* ── Inline edit form ── */
+                  <form onSubmit={onSaveEdit} className="p-5 grid gap-4 sm:grid-cols-2 bg-slate-800/40">
+                    <label className="col-span-full grid gap-1 text-sm">
+                      <span className="text-slate-300">Event name <span className="text-rose-400">*</span></span>
+                      <input
+                        value={editName}
+                        onChange={e => setEditName(e.target.value)}
+                        required maxLength={160}
+                        className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring"
+                      />
+                    </label>
+                    <label className="col-span-full grid gap-1 text-sm">
+                      <span className="text-slate-300">Description</span>
+                      <textarea
+                        value={editDesc}
+                        onChange={e => setEditDesc(e.target.value)}
+                        maxLength={500} rows={2}
+                        className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring resize-none"
+                      />
+                    </label>
+                    <label className="grid gap-1 text-sm">
+                      <span className="text-slate-300">Start date &amp; time</span>
+                      <input type="datetime-local" value={editStartsAt} onChange={e => setEditStartsAt(e.target.value)}
+                        className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring [color-scheme:dark]" />
+                    </label>
+                    <label className="grid gap-1 text-sm">
+                      <span className="text-slate-300">End date &amp; time</span>
+                      <input type="datetime-local" value={editEndsAt} onChange={e => setEditEndsAt(e.target.value)}
+                        className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring [color-scheme:dark]" />
+                    </label>
+                    <label className="grid gap-1 text-sm">
+                      <span className="text-slate-300">Status</span>
+                      <select value={editStatus} onChange={e => setEditStatus(e.target.value)}
+                        className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring">
+                        <option value="DRAFT">Draft</option>
+                        <option value="PUBLISHED">Published</option>
+                      </select>
+                    </label>
+                    {editError && <p className="col-span-full text-sm text-rose-300">{editError}</p>}
+                    <div className="col-span-full flex gap-2">
+                      <button type="submit" disabled={isSaving}
+                        className="rounded-lg bg-cyan-400 px-4 py-1.5 text-sm font-semibold text-slate-950 hover:bg-cyan-300 disabled:opacity-60 transition">
+                        {isSaving ? 'Saving…' : 'Save changes'}
+                      </button>
+                      <button type="button" onClick={() => setEditId(null)}
+                        className="rounded-lg border border-slate-700 px-4 py-1.5 text-sm text-slate-300 hover:bg-slate-800 transition">
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  /* ── Read-only row ── */
+                  <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium truncate">{item.name}</span>
+                        <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[item.status]}`}>
+                          {STATUS_LABELS[item.status]}
+                        </span>
+                      </div>
+                      {item.description && (
+                        <p className="mt-1 text-sm text-slate-400 line-clamp-2">{item.description}</p>
+                      )}
+                      <div className="mt-1.5 flex flex-wrap gap-3 text-xs text-slate-500">
+                        <span>Starts: {formatDateTime(item.startsAt)}</span>
+                        <span>Ends: {formatDateTime(item.endsAt)}</span>
+                        <span>Created {new Date(item.createdAt).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-shrink-0 flex-wrap gap-2">
+                      {item.status !== 'ARCHIVED' && (
+                        <button type="button" onClick={() => openEdit(item)}
+                          className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 transition">
+                          Edit
+                        </button>
+                      )}
+                      <button type="button" onClick={() => router.push(`/o/${orgCode}/events/${item.id}/links`)}
+                        className="rounded-lg border border-cyan-600 px-3 py-1.5 text-xs text-cyan-200 hover:bg-cyan-600/10 transition">
+                        Links
+                      </button>
+                      {item.status !== 'ARCHIVED' && (
+                        <button type="button" onClick={() => void onArchive(item.id)}
+                          className="rounded-lg border border-amber-500/60 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-500/10 transition">
+                          Archive
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </li>
-              ))}
-            </ul>
-          ) : null}
+                )}
+              </li>
+            ))}
+          </ul>
         </section>
       </div>
     </main>
   );
 }
+

@@ -1,0 +1,11 @@
+phase8_backup_restore_status=PASS
+timestamp=20260507-215216
+backup_file=/Users/fitsum/EventRegistration/EveMange/artifacts/phase8/mysql-backup-20260507-215216.sql
+restore_db=evemange_restore_drill
+duration_seconds=5
+registrants_source=150
+registrants_restore=150
+checkins_source=75
+checkins_restore=75
+audit_logs_source=1
+audit_logs_restore=1

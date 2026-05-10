@@ -1,0 +1,10 @@
+phase8_load_status=PASS
+timestamp=20260507-215511
+iterations=3
+failures=0
+error_rate_percent=0
+min_ms=10264
+avg_ms=10458
+p95_ms=10843
+max_ms=10843
+notes=Each iteration executes npm run test:integration:analytics:local
