@@ -68,7 +68,7 @@ The items below are the "V1" legacy features which will be refactored into the n
 - [ ] **Export Engine**: Per-event and per-link CSV/Excel reporting.
 - [ ] **Bulk Communication 2.0**: Event-specific manual/scheduled emails.
 
-### Section 3.1: Super Admin Portal Features [IN PROGRESS]
+### Section 3.1: Super Admin Portal Features [COMPLETE]
 - [x] **Manage Organizers**: List organizations and create organizations.
 - [x] **Edit/Suspend Organizer Accounts**: Super-admin organization update endpoint for name/code/isActive.
 - [x] **View All Events Across Organizers**: Platform-wide event list endpoint.
@@ -83,6 +83,39 @@ The items below are the "V1" legacy features which will be refactored into the n
 - [x] **Super Admin UI Completion**: Dashboard now exposes platform overview, events, system users, audit logs, backup visibility, and JSON editors for all section 3.1 settings/template endpoints.
 - [ ] **Operational Actions**: Add guarded API workflow for triggering backup/restore drill from portal.
 - [x] **E2E Tests**: Added API integration coverage for all current super-admin section 3.1 routes in `apps/api/src/modules/super-admin/super-admin.integration.test.ts`.
+
+### Section 3.2: Organizer Portal Features [IN PROGRESS]
+
+#### Implemented ✅
+- [x] **Create & Manage Events**: API endpoints for event CRUD operations.
+- [x] **Multiple Registration Links**: Support for multiple links per event (VIP, General, Speaker, etc.).
+- [x] **Manage Registrants**: View and filter attendees by status.
+- [x] **Approve/Reject Registrations**: Manual approval workflow for registration requests.
+- [x] **Generate Badges & QR Codes**: Badge generation with QR code integration.
+- [x] **Confirmation Emails**: Automated email notifications on registration and approval.
+- [x] **Bulk Communications**: Send emails to registered attendees.
+- [x] **Report Export**: Export attendance data and registration reports.
+- [x] **Organizer UI Portal**: Dashboard with navigation to all major features.
+- [x] **Custom Role Management**: Create org-scoped custom user roles (Event Manager, Scanner Admin, etc.).
+- [x] **User/Role Management API**: Endpoints to manage team members and assign roles.
+
+#### Partially Implemented 🟡
+- [x] **Attendee Import**: CSV import support (missing XLSX format).
+- [ ] **Automated Bulk Communications**: Manual reminders only (no scheduling/automation).
+- [x] **Usher API**: Check-in endpoints exist but no organizer UI for usher management.
+- [x] **Analytics**: Basic metrics available (missing live dashboard and real-time updates).
+
+#### Missing 🔴
+- [ ] **Registration Form Builder**: Organizers cannot customize registration form fields per link (only JSON config at super-admin level).
+- [ ] **Registration Page Designer**: No UI for organizers to design registration page branding/layout (template-based only).
+- [ ] **Bulk User Invitations**: Cannot bulk-invite team members via CSV.
+- [ ] **Event Templates**: Cannot create reusable event templates.
+- [ ] **Advanced Approval Rules**: Complex conditional approvals based on registrant data.
+- [ ] **Live Analytics Dashboard**: Real-time attendee registration and check-in metrics.
+- [ ] **Attendee Communication History**: View communication logs per attendee.
+- [ ] **Webhook Integrations**: Send registration events to external systems.
+- [ ] **Mobile App for Organizers**: Mobile view for portable event management.
+- [ ] **Usher Portal UI**: Organizer-facing usher team and device management.
 
 ---
 

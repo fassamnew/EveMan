@@ -18,6 +18,8 @@ import type { InviteUserDto } from './dto/invite-user.dto';
 import type { ActivateInviteDto } from './dto/activate-invite.dto';
 import type { CreateLinkTypeDto } from './dto/create-link-type.dto';
 import type { UpdateLinkTypeDto } from './dto/update-link-type.dto';
+import type { CreateCustomRoleDto } from './dto/create-custom-role.dto';
+import type { UpdateCustomRoleDto } from './dto/update-custom-role.dto';
 
 @Injectable()
 export class OrganizationsService {
@@ -99,12 +101,32 @@ export class OrganizationsService {
       throw new ForbiddenException('ORG_ADMIN role required to invite users');
     }
 
-    const role = await this.prisma.role.findUnique({
-      where: { name: dto.roleName as RoleName }
-    });
+    let role;
 
-    if (!role) {
-      throw new BadRequestException('Invalid role');
+    // Support both roleId and roleName for backward compatibility
+    if (dto.roleId) {
+      role = await this.prisma.role.findUnique({
+        where: { id: dto.roleId }
+      });
+
+      // Ensure role belongs to org or is a system role
+      if (!role || (role.organizationId && role.organizationId !== org.id)) {
+        throw new BadRequestException('Role not found or not available for this organization');
+      }
+    } else if (dto.roleName) {
+      role = await this.prisma.role.findFirst({
+        where: {
+          name: dto.roleName,
+          isSystem: true,
+          organizationId: null
+        }
+      });
+
+      if (!role) {
+        throw new BadRequestException('Invalid role');
+      }
+    } else {
+      throw new BadRequestException('Either roleId or roleName must be provided');
     }
 
     const token = randomBytes(32).toString('hex');
@@ -132,14 +154,16 @@ export class OrganizationsService {
       ipAddress: this.getClientIp(req),
       metadataJson: {
         email: dto.email,
-        roleName: dto.roleName
+        roleName: dto.roleName,
+        roleId: dto.roleId
       }
     });
 
     return {
       organizationCode: orgCode,
       email: dto.email,
-      roleName: dto.roleName,
+      roleName: role.name,
+      roleId: role.id,
       inviteToken: token,
       expiresAt
     };
@@ -310,4 +334,165 @@ export class OrganizationsService {
     });
     return { id: linkTypeId, deleted: true };
   }
+
+  // ── Custom Roles ────────────────────────────────────────────────────────────
+
+  async listRoles(orgCode: string, req: RequestWithAuth) {
+    if (!req.auth || !this.policy.canAccessTenant(req.auth, orgCode)) {
+      throw new ForbiddenException('Missing tenant access');
+    }
+    const org = await this.getOrgByCode(orgCode);
+
+    // Return system roles + org-scoped custom roles
+    const roles = await this.prisma.role.findMany({
+      where: {
+        OR: [
+          { isSystem: true, organizationId: null }, // System roles
+          { organizationId: org.id } // Org-scoped custom roles
+        ]
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        isSystem: true,
+        createdAt: true
+      },
+      orderBy: [{ isSystem: 'desc' }, { name: 'asc' }]
+    });
+
+    return roles;
+  }
+
+  async createRole(orgCode: string, dto: CreateCustomRoleDto, req: RequestWithAuth) {
+    this.assertOrgAdminAccess(orgCode, req);
+    const org = await this.getOrgByCode(orgCode);
+
+    // Check if role name already exists for this org
+    const existing = await this.prisma.role.findFirst({
+      where: { name: dto.name.trim(), organizationId: org.id }
+    });
+
+    if (existing) {
+      throw new BadRequestException('A role with that name already exists in this organization');
+    }
+
+    const role = await this.prisma.role.create({
+      data: {
+        name: dto.name.trim(),
+        description: dto.description?.trim(),
+        isSystem: false,
+        organizationId: org.id
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        isSystem: true,
+        createdAt: true
+      }
+    });
+
+    await this.audit.write({
+      actorUserId: req.auth?.userId,
+      organizationId: org.id,
+      action: 'ROLE_CREATED',
+      targetType: 'ROLE',
+      targetId: role.id,
+      outcome: AuditOutcome.SUCCESS,
+      ipAddress: this.getClientIp(req),
+      metadataJson: { roleName: role.name }
+    });
+
+    return role;
+  }
+
+  async updateRole(orgCode: string, roleId: string, dto: UpdateCustomRoleDto, req: RequestWithAuth) {
+    this.assertOrgAdminAccess(orgCode, req);
+    const org = await this.getOrgByCode(orgCode);
+
+    const role = await this.prisma.role.findFirst({
+      where: { id: roleId, organizationId: org.id }
+    });
+
+    if (!role) throw new NotFoundException('Role not found');
+
+    if (role.isSystem) {
+      throw new ForbiddenException('Cannot modify system roles');
+    }
+
+    const updated = await this.prisma.role.update({
+      where: { id: roleId },
+      data: {
+        description: dto.description !== undefined ? dto.description.trim() : undefined
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        isSystem: true,
+        createdAt: true
+      }
+    });
+
+    await this.audit.write({
+      actorUserId: req.auth?.userId,
+      organizationId: org.id,
+      action: 'ROLE_UPDATED',
+      targetType: 'ROLE',
+      targetId: roleId,
+      outcome: AuditOutcome.SUCCESS,
+      ipAddress: this.getClientIp(req)
+    });
+
+    return updated;
+  }
+
+  async deleteRole(orgCode: string, roleId: string, req: RequestWithAuth) {
+    this.assertOrgAdminAccess(orgCode, req);
+    const org = await this.getOrgByCode(orgCode);
+
+    const role = await this.prisma.role.findFirst({
+      where: { id: roleId, organizationId: org.id }
+    });
+
+    if (!role) throw new NotFoundException('Role not found');
+
+    if (role.isSystem) {
+      throw new ForbiddenException('Cannot delete system roles');
+    }
+
+    // Check if role is in use
+    const usersWithRole = await this.prisma.userRole.count({
+      where: { roleId }
+    });
+
+    if (usersWithRole > 0) {
+      throw new BadRequestException(`Cannot delete role: ${usersWithRole} user(s) are assigned to this role`);
+    }
+
+    const pendingInvites = await this.prisma.invite.count({
+      where: { roleId }
+    });
+
+    if (pendingInvites > 0) {
+      throw new BadRequestException(`Cannot delete role: ${pendingInvites} pending invite(s) use this role`);
+    }
+
+    await this.prisma.role.delete({ where: { id: roleId } });
+
+    await this.audit.write({
+      actorUserId: req.auth?.userId,
+      organizationId: org.id,
+      action: 'ROLE_DELETED',
+      targetType: 'ROLE',
+      targetId: roleId,
+      outcome: AuditOutcome.SUCCESS,
+      ipAddress: this.getClientIp(req),
+      metadataJson: { roleName: role.name }
+    });
+
+    return { id: roleId, deleted: true };
+  }
 }
+

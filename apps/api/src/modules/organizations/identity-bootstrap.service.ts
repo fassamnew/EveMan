@@ -20,18 +20,33 @@ export class IdentityBootstrapService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     for (const role of SYSTEM_ROLES) {
-      await this.prisma.role.upsert({
-        where: { name: role.name },
-        update: {
-          description: role.description,
-          isSystem: true
-        },
-        create: {
+      // For system roles, organizationId should be null
+      // We use upsertMany or individual upserts since the unique key is now (name, organizationId)
+      const existing = await this.prisma.role.findFirst({
+        where: {
           name: role.name,
-          description: role.description,
-          isSystem: true
+          organizationId: null
         }
       });
+
+      if (existing) {
+        await this.prisma.role.update({
+          where: { id: existing.id },
+          data: {
+            description: role.description,
+            isSystem: true
+          }
+        });
+      } else {
+        await this.prisma.role.create({
+          data: {
+            name: role.name,
+            description: role.description,
+            isSystem: true,
+            organizationId: null
+          }
+        });
+      }
     }
 
     const superAdminEmail = process.env.BOOTSTRAP_SUPER_ADMIN_EMAIL;
@@ -57,8 +72,11 @@ export class IdentityBootstrapService implements OnModuleInit {
       }
     });
 
-    const superAdminRole = await this.prisma.role.findUnique({
-      where: { name: 'SUPER_ADMIN' }
+    const superAdminRole = await this.prisma.role.findFirst({
+      where: {
+        name: 'SUPER_ADMIN',
+        organizationId: null
+      }
     });
 
     if (!superAdminRole) {

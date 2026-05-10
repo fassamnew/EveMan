@@ -131,6 +131,7 @@ model Organization {
   importJobs ImportJob[]
   checkins Checkin[]
   linkTypes LinkType[]
+  roles      Role[]       @relation("OrgRoles")
 
   @@map("organizations")
 }
@@ -160,15 +161,21 @@ model User {
 }
 
 model Role {
-  id          String      @id @default(uuid())
-  name        RoleName    @unique
-  description String?
-  isSystem    Boolean     @default(true)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  userRoles   UserRole[]
-  invites     Invite[]
+  id             String         @id @default(uuid())
+  name           String
+  description    String?
+  isSystem       Boolean        @default(true)
+  organizationId String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  organization   Organization?  @relation("OrgRoles", fields: [organizationId], references: [id], onDelete: Cascade)
+  userRoles      UserRole[]
+  invites        Invite[]
 
+  // Unique constraint: system roles have unique names (organizationId is NULL)
+  // Custom roles can have same name in different orgs
+  @@unique([name, organizationId])
+  @@index([organizationId])
   @@map("roles")
 }
 

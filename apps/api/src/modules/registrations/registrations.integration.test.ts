@@ -21,18 +21,27 @@ describe.skipIf(!runIntegration)('Registrations integration (MySQL)', () => {
 
   async function ensureSystemRoles(): Promise<void> {
     for (const role of SYSTEM_ROLES) {
-      await prisma.role.upsert({
-        where: { name: role.name },
-        update: {
-          description: role.description,
-          isSystem: true
-        },
-        create: {
-          name: role.name,
-          description: role.description,
-          isSystem: true
-        }
+      const existing = await prisma.role.findFirst({
+        where: { name: role.name, organizationId: null }
       });
+      if (existing) {
+        await prisma.role.update({
+          where: { id: existing.id },
+          data: {
+            description: role.description,
+            isSystem: true
+          }
+        });
+      } else {
+        await prisma.role.create({
+          data: {
+            name: role.name,
+            description: role.description,
+            isSystem: true,
+            organizationId: null
+          }
+        });
+      }
     }
   }
 

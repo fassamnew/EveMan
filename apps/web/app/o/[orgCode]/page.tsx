@@ -1,253 +1,197 @@
 'use client';
 
-import { FormEvent, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { clearSession, loadSession, saveSession } from '../../../lib/session';
+import { useTheme } from '../../../lib/theme-provider';
 
-type LoginResponse = {
-  accessToken: string;
-  refreshToken: string;
-  user: {
-    email: string;
-    roles: string[];
-    organizationId: string | null;
-    organizationCode: string | null;
-  };
-};
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
-
-export default function OrganizationPortalPage() {
+export default function OrgDashboardPage() {
   const router = useRouter();
-  const params = useParams<{ orgCode: string }>();
-  const [isAuthorized, setIsAuthorized] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const orgCode = params.orgCode;
-  const normalizedOrgCode = useMemo(() => (typeof orgCode === 'string' ? orgCode : ''), [orgCode]);
+  const params = useParams();
+  const { theme } = useTheme();
+  const orgCode = params.orgCode as string;
 
-  useEffect(() => {
-    if (!normalizedOrgCode) {
-      return;
-    }
+  const quickLinks = [
+    {
+      title: 'Create New Event',
+      description: 'Set up a new event with registration links',
+      href: `/o/${orgCode}/events`,
+      icon: '🗓',
+      color: 'cyan',
+    },
+    {
+      title: 'View Attendees',
+      description: 'Manage registrations and approvals',
+      href: `/o/${orgCode}/attendees`,
+      icon: '👥',
+      color: 'emerald',
+    },
+    {
+      title: 'Import Attendees',
+      description: 'Bulk upload from CSV',
+      href: `/o/${orgCode}/imports`,
+      icon: '📥',
+      color: 'violet',
+    },
+    {
+      title: 'Design Badges',
+      description: 'Create badge templates',
+      href: `/o/${orgCode}/templates/badges`,
+      icon: '🏷',
+      color: 'amber',
+    },
+    {
+      title: 'Send Communications',
+      description: 'Email attendees and manage templates',
+      href: `/o/${orgCode}/communications`,
+      icon: '📨',
+      color: 'sky',
+    },
+    {
+      title: 'View Analytics',
+      description: 'Registration metrics and reports',
+      href: `/o/${orgCode}/analytics`,
+      icon: '📈',
+      color: 'rose',
+    },
+  ];
 
-    const session = loadSession();
-
-    if (!session) {
-      setIsAuthorized(false);
-      return;
-    }
-
-    if (session.roles.includes('SUPER_ADMIN')) {
-      router.replace('/super-admin');
-      return;
-    }
-
-    if (session.organizationCode !== normalizedOrgCode) {
-      clearSession();
-      setIsAuthorized(false);
-      return;
-    }
-
-    setIsAuthorized(true);
-    setEmail(session.email);
-  }, [normalizedOrgCode, router]);
-
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!normalizedOrgCode) {
-      return;
-    }
-
-    setError(null);
-    setIsSubmitting(true);
-
-    try {
-      const response = await fetch(`${API_BASE}/auth/login`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json'
-        },
-        body: JSON.stringify({
-          email,
-          password,
-          orgCode: normalizedOrgCode
-        })
-      });
-
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as { message?: string };
-        setError(payload.message || 'Login failed');
-        return;
-      }
-
-      const payload = (await response.json()) as LoginResponse;
-
-      if (payload.user.organizationCode !== normalizedOrgCode) {
-        setError('Credentials are valid but not for this organization portal');
-        return;
-      }
-
-      saveSession({
-        accessToken: payload.accessToken,
-        refreshToken: payload.refreshToken,
-        organizationId: payload.user.organizationId,
-        organizationCode: payload.user.organizationCode,
-        roles: payload.user.roles,
-        email: payload.user.email
-      });
-
-      setIsAuthorized(true);
-      setPassword('');
-      setError(null);
-    } catch {
-      setError('Network error while attempting login');
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  if (!isAuthorized) {
-    return (
-      <main className="min-h-screen bg-slate-950 text-slate-100">
-        <div className="mx-auto flex min-h-screen w-full max-w-2xl items-center px-6 py-10">
-          <section className="w-full rounded-3xl border border-slate-800 bg-slate-900/70 p-8 shadow-2xl shadow-cyan-900/20 backdrop-blur">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Organization Portal</p>
-            <h1 className="mt-3 text-4xl font-semibold tracking-tight">{normalizedOrgCode || 'organization'} Sign in</h1>
-            <p className="mt-4 text-sm text-slate-300">
-              This login page is scoped to <span className="font-semibold text-cyan-200">/o/{normalizedOrgCode}</span>.
-            </p>
-
-            <form onSubmit={onSubmit} className="mt-6 grid gap-4">
-              <label className="grid gap-1 text-sm">
-                <span className="text-slate-300">Email</span>
-                <input
-                  value={email}
-                  onChange={event => setEmail(event.target.value)}
-                  type="email"
-                  required
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring"
-                />
-              </label>
-              <label className="grid gap-1 text-sm">
-                <span className="text-slate-300">Password</span>
-                <input
-                  value={password}
-                  onChange={event => setPassword(event.target.value)}
-                  type="password"
-                  required
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring"
-                />
-              </label>
-
-              <button
-                disabled={isSubmitting}
-                type="submit"
-                className="mt-2 rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isSubmitting ? 'Signing in...' : 'Sign in to Organization Portal'}
-              </button>
-
-              {error ? <p className="text-sm text-red-300">{error}</p> : null}
-            </form>
-          </section>
-        </div>
-      </main>
-    );
-  }
+  const colorClasses = {
+    cyan: theme === 'dark' 
+      ? 'bg-cyan-500/10 text-cyan-300' 
+      : 'bg-cyan-100 text-cyan-700',
+    emerald: theme === 'dark' 
+      ? 'bg-emerald-500/10 text-emerald-300' 
+      : 'bg-emerald-100 text-emerald-700',
+    violet: theme === 'dark' 
+      ? 'bg-violet-500/10 text-violet-300' 
+      : 'bg-violet-100 text-violet-700',
+    amber: theme === 'dark' 
+      ? 'bg-amber-500/10 text-amber-300' 
+      : 'bg-amber-100 text-amber-700',
+    sky: theme === 'dark' 
+      ? 'bg-sky-500/10 text-sky-300' 
+      : 'bg-sky-100 text-sky-700',
+    rose: theme === 'dark' 
+      ? 'bg-rose-500/10 text-rose-300' 
+      : 'bg-rose-100 text-rose-700',
+  };
 
   return (
-    <main className="min-h-screen bg-slate-950 px-6 py-8 text-slate-100">
-      <div className="mx-auto max-w-5xl">
+    <main className={`min-h-screen px-4 py-8 sm:px-6 lg:px-8 ${
+      theme === 'dark' ? 'bg-slate-950' : 'bg-white'
+    }`}>
+      <div className="mx-auto max-w-6xl">
         {/* Header */}
-        <header className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Organization Portal</p>
-              <h1 className="mt-2 text-3xl font-semibold tracking-tight capitalize">{normalizedOrgCode}</h1>
-              <p className="mt-1 text-sm text-slate-400">Signed in as {email || '…'}</p>
-            </div>
+        <div className="mb-8">
+          <h1 className={`text-3xl font-bold ${theme === 'dark' ? 'text-slate-100' : 'text-slate-950'}`}>
+            Welcome to {orgCode}
+          </h1>
+          <p className={`mt-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
+            Manage your events, registrations, and communications all in one place
+          </p>
+        </div>
+
+        {/* Quick Links Grid */}
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {quickLinks.map((link) => (
             <button
-              type="button"
-              onClick={() => {
-                clearSession();
-                router.push(`/o/${normalizedOrgCode}`);
-              }}
-              className="rounded-lg border border-rose-500/60 px-3 py-2 text-sm text-rose-200 transition hover:bg-rose-500/10"
+              key={link.href}
+              onClick={() => router.push(link.href)}
+              className={`group rounded-xl border p-6 text-left transition-all hover:shadow-lg ${
+                theme === 'dark'
+                  ? 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-800'
+                  : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100'
+              }`}
             >
-              Sign out
+              <div
+                className={`mb-4 inline-flex h-12 w-12 items-center justify-center rounded-lg text-2xl ${
+                  colorClasses[link.color as keyof typeof colorClasses]
+                }`}
+              >
+                {link.icon}
+              </div>
+              <h3 className={`font-semibold transition ${
+                theme === 'dark'
+                  ? 'text-slate-100 group-hover:text-cyan-200'
+                  : 'text-slate-950 group-hover:text-blue-600'
+              }`}>
+                {link.title}
+              </h3>
+              <p className={`mt-2 text-sm ${
+                theme === 'dark' ? 'text-slate-400' : 'text-slate-600'
+              }`}>
+                {link.description}
+              </p>
             </button>
+          ))}
+        </div>
+
+        {/* Stats Section */}
+        <div className={`mt-12 rounded-xl border p-8 ${
+          theme === 'dark'
+            ? 'border-slate-800 bg-slate-900/60'
+            : 'border-slate-200 bg-slate-50'
+        }`}>
+          <h2 className={`mb-6 text-lg font-semibold ${
+            theme === 'dark' ? 'text-slate-100' : 'text-slate-950'
+          }`}>
+            Quick Stats
+          </h2>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <p className={`text-sm font-medium ${
+                theme === 'dark' ? 'text-slate-400' : 'text-slate-600'
+              }`}>
+                Total Events
+              </p>
+              <p className={`mt-2 text-3xl font-bold ${
+                theme === 'dark' ? 'text-cyan-300' : 'text-blue-600'
+              }`}>
+                —
+              </p>
+            </div>
+            <div>
+              <p className={`text-sm font-medium ${
+                theme === 'dark' ? 'text-slate-400' : 'text-slate-600'
+              }`}>
+                Registered Attendees
+              </p>
+              <p className={`mt-2 text-3xl font-bold ${
+                theme === 'dark' ? 'text-emerald-300' : 'text-emerald-600'
+              }`}>
+                —
+              </p>
+            </div>
+            <div>
+              <p className={`text-sm font-medium ${
+                theme === 'dark' ? 'text-slate-400' : 'text-slate-600'
+              }`}>
+                Pending Approvals
+              </p>
+              <p className={`mt-2 text-3xl font-bold ${
+                theme === 'dark' ? 'text-amber-300' : 'text-amber-600'
+              }`}>
+                —
+              </p>
+            </div>
+            <div>
+              <p className={`text-sm font-medium ${
+                theme === 'dark' ? 'text-slate-400' : 'text-slate-600'
+              }`}>
+                Check-ins Today
+              </p>
+              <p className={`mt-2 text-3xl font-bold ${
+                theme === 'dark' ? 'text-rose-300' : 'text-rose-600'
+              }`}>
+                —
+              </p>
+            </div>
           </div>
-        </header>
+        </div>
+      </div>
+    </main>
+  );
+}
 
-        {/* Nav cards */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <button
-            type="button"
-            onClick={() => router.push(`/o/${normalizedOrgCode}/events`)}
-            className="group rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-left transition hover:border-cyan-500/50 hover:bg-slate-800/60"
-          >
-            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-300 text-xl">🗓</div>
-            <h2 className="font-semibold text-slate-100 group-hover:text-cyan-200">Events &amp; Links</h2>
-            <p className="mt-1 text-sm text-slate-400">Create and manage events, registration links and approvals.</p>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => router.push(`/o/${normalizedOrgCode}/attendees`)}
-            className="group rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-left transition hover:border-cyan-500/50 hover:bg-slate-800/60"
-          >
-            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-300 text-xl">👥</div>
-            <h2 className="font-semibold text-slate-100 group-hover:text-cyan-200">Attendees</h2>
-            <p className="mt-1 text-sm text-slate-400">View, approve, reject and manage registered attendees.</p>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => router.push(`/o/${normalizedOrgCode}/imports`)}
-            className="group rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-left transition hover:border-cyan-500/50 hover:bg-slate-800/60"
-          >
-            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300 text-xl">📥</div>
-            <h2 className="font-semibold text-slate-100 group-hover:text-cyan-200">Attendee Imports</h2>
-            <p className="mt-1 text-sm text-slate-400">Bulk-import attendees from CSV files.</p>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => router.push(`/o/${normalizedOrgCode}/templates/badges`)}
-            className="group rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-left transition hover:border-cyan-500/50 hover:bg-slate-800/60"
-          >
-            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10 text-amber-300 text-xl">🏷</div>
-            <h2 className="font-semibold text-slate-100 group-hover:text-cyan-200">Badge Templates</h2>
-            <p className="mt-1 text-sm text-slate-400">Design and manage badge templates for events.</p>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => router.push(`/o/${normalizedOrgCode}/communications`)}
-            className="group rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-left transition hover:border-cyan-500/50 hover:bg-slate-800/60"
-          >
-            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500/10 text-sky-300 text-xl">📨</div>
-            <h2 className="font-semibold text-slate-100 group-hover:text-cyan-200">Communications</h2>
-            <p className="mt-1 text-sm text-slate-400">Send emails and SMS to attendees and manage templates.</p>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => router.push(`/o/${normalizedOrgCode}/analytics`)}
-            className="group rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-left transition hover:border-cyan-500/50 hover:bg-slate-800/60"
-          >
-            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-rose-500/10 text-rose-300 text-xl">📊</div>
-            <h2 className="font-semibold text-slate-100 group-hover:text-cyan-200">Analytics</h2>
-            <p className="mt-1 text-sm text-slate-400">Registration metrics, check-in rates and exportable reports.</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => router.push(`/o/${normalizedOrgCode}/settings`)}
             className="group rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-left transition hover:border-cyan-500/50 hover:bg-slate-800/60"
           >
             <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-slate-500/10 text-slate-300 text-xl">⚙</div>

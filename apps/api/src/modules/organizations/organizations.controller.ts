@@ -10,6 +10,8 @@ import { InviteUserDto } from './dto/invite-user.dto';
 import { ActivateInviteDto } from './dto/activate-invite.dto';
 import { CreateLinkTypeDto } from './dto/create-link-type.dto';
 import { UpdateLinkTypeDto } from './dto/update-link-type.dto';
+import { CreateCustomRoleDto } from './dto/create-custom-role.dto';
+import { UpdateCustomRoleDto } from './dto/update-custom-role.dto';
 
 @Controller()
 export class OrganizationsController {
@@ -101,5 +103,44 @@ export class OrganizationsController {
     @Req() req: RequestWithAuth
   ) {
     return this.organizationsService.deleteLinkType(orgCode, linkTypeId, req);
+  }
+
+  // ── Custom Roles ────────────────────────────────────────────────────────────
+
+  @UseGuards(AccessTokenGuard, OrgAccessGuard)
+  @Get('org/:orgCode/roles')
+  async listRoles(@Param('orgCode') orgCode: string, @Req() req: RequestWithAuth) {
+    return this.organizationsService.listRoles(orgCode, req);
+  }
+
+  @UseGuards(AccessTokenGuard, OrgAccessGuard, ManagementRateLimitGuard)
+  @Post('org/:orgCode/roles')
+  async createRole(
+    @Param('orgCode') orgCode: string,
+    @Body() dto: CreateCustomRoleDto,
+    @Req() req: RequestWithAuth
+  ) {
+    return this.organizationsService.createRole(orgCode, dto, req);
+  }
+
+  @UseGuards(AccessTokenGuard, OrgAccessGuard, ManagementRateLimitGuard)
+  @Patch('org/:orgCode/roles/:roleId')
+  async updateRole(
+    @Param('orgCode') orgCode: string,
+    @Param('roleId') roleId: string,
+    @Body() dto: UpdateCustomRoleDto,
+    @Req() req: RequestWithAuth
+  ) {
+    return this.organizationsService.updateRole(orgCode, roleId, dto, req);
+  }
+
+  @UseGuards(AccessTokenGuard, OrgAccessGuard, ManagementRateLimitGuard)
+  @Delete('org/:orgCode/roles/:roleId')
+  async deleteRole(
+    @Param('orgCode') orgCode: string,
+    @Param('roleId') roleId: string,
+    @Req() req: RequestWithAuth
+  ) {
+    return this.organizationsService.deleteRole(orgCode, roleId, req);
   }
 }
