@@ -6,6 +6,7 @@ import type { RequestWithAuth } from '../common/request-with-auth';
 import { AttendeesService } from './attendees.service';
 import { ListAttendeesDto } from './dto/list-attendees.dto';
 import { UpdateAttendeeDto } from './dto/update-attendee.dto';
+import { OnsiteRegistrationDto } from './dto/onsite-registration.dto';
 import { ListAttendeeCommunicationsDto } from './dto/list-attendee-communications.dto';
 
 @Controller()
@@ -92,5 +93,21 @@ export class AttendeesController {
     @Req() req: RequestWithAuth
   ) {
     return this.attendeesService.cancelRegistration({ orgCode, registrantId, req });
+  }
+
+  @UseGuards(AccessTokenGuard, OrgAccessGuard, ManagementRateLimitGuard)
+  @Post('org/:orgCode/events/:eventId/register-onsite')
+  async registerOnsite(
+    @Param('orgCode') orgCode: string,
+    @Param('eventId') eventId: string,
+    @Body() dto: { registrationLinkSlug: string; registration: OnsiteRegistrationDto },
+    @Req() req: RequestWithAuth
+  ) {
+    return this.attendeesService.registerOnsite({
+      orgCode,
+      registrationLinkSlug: dto.registrationLinkSlug,
+      dto: dto.registration,
+      req
+    });
   }
 }

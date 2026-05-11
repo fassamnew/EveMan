@@ -16,6 +16,7 @@ import type { RequestWithAuth } from '../common/request-with-auth';
 import type { ListAttendeesDto } from './dto/list-attendees.dto';
 import type { UpdateAttendeeDto } from './dto/update-attendee.dto';
 import type { ListAttendeeCommunicationsDto } from './dto/list-attendee-communications.dto';
+import type { OnsiteRegistrationDto } from './dto/onsite-registration.dto';
 
 @Injectable()
 export class AttendeesService {
@@ -570,6 +571,170 @@ export class AttendeesService {
       registrantId: registrant.id,
       lifecycleStatus: updated.lifecycleStatus,
       lifecycleUpdatedAt: updated.lifecycleUpdatedAt
+    };
+  }
+
+  async registerOnsite(input: {
+    orgCode: string;
+    registrationLinkSlug: string;
+    dto: OnsiteRegistrationDto;
+    req: RequestWithAuth;
+  }) {
+    this.assertWriteAccess(input.orgCode, input.req);
+    const org = await this.getOrg(input.orgCode);
+
+    // Get registration link and event
+    const link = await this.prisma.registrationLink.findFirst({
+      where: {
+        slug: input.registrationLinkSlug,
+        organizationId: org.id
+      },
+      include: {
+        event: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    });
+
+    if (!link) {
+      throw new NotFoundException('Registration link not found');
+    }
+
+    const normalizedEmail = this.normalizeEmail(input.dto.email);
+
+    // Check for duplicate email in the same event
+    const existingRegistrant = await this.prisma.registrant.findFirst({
+      where: {
+        eventId: link.eventId,
+        email: normalizedEmail
+      }
+    });
+
+    if (existingRegistrant) {
+      throw new ConflictException(`Email already registered for this event (Reference: ${existingRegistrant.referenceCode})`);
+    }
+
+    // Check for duplicate email in the same registration link
+    const existingInLink = await this.prisma.registrant.findFirst({
+      where: {
+        registrationLinkId: link.id,
+        email: normalizedEmail
+      }
+    });
+
+    if (existingInLink) {
+      throw new ConflictException('Email already registered for this category');
+    }
+
+    // Generate reference code (format: EVENT-LINK-TIMESTAMP-RANDOM)
+    const eventCode = link.event.name.substring(0, 3).toUpperCase();
+    const linkCode = input.registrationLinkSlug.substring(0, 3).toUpperCase();
+    const timestamp = Date.now().toString().slice(-4);
+    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const referenceCode = `${eventCode}${linkCode}${timestamp}${random}`;
+
+    // Create registrant with auto-approval
+    const registrant = await this.prisma.registrant.create({
+      data: {
+        organizationId: org.id,
+        eventId: link.eventId,
+        registrationLinkId: link.id,
+        referenceCode,
+        email: normalizedEmail,
+        fullName: input.dto.fullName,
+        lifecycleStatus: AttendeeLifecycleStatus.APPROVED,
+        lifecycleUpdatedAt: new Date(),
+        consentAccepted: true,
+        consentPolicyVersion: 'onsite-v1',
+        consentCapturedAt: new Date()
+      }
+    });
+
+    // Store response fields if provided
+    if (input.dto.responses && input.dto.responses.length > 0) {
+      const responseData = input.dto.responses.map(r => ({
+        registrantId: registrant.id,
+        fieldKey: r.fieldKey,
+        valueText: r.value
+      }));
+
+      await this.prisma.registrantResponse.createMany({
+        data: responseData
+      });
+    }
+
+    // Store photo if provided
+    if (input.dto.photoUrl) {
+      await this.prisma.registrantResponse.upsert({
+        where: {
+          registrantId_fieldKey: {
+            registrantId: registrant.id,
+            fieldKey: '__photo_upload__'
+          }
+        },
+        create: {
+          registrantId: registrant.id,
+          fieldKey: '__photo_upload__',
+          valueText: input.dto.photoUrl
+        },
+        update: {
+          valueText: input.dto.photoUrl
+        }
+      });
+    }
+
+    // Trigger badge generation
+    let badgeQueued = false;
+    try {
+      await this.badgeQrService.issueForRegistrant({ registrantId: registrant.id });
+      badgeQueued = true;
+    } catch {
+      // Log but don't fail registration if badge queuing fails
+    }
+
+    // Audit log
+    await this.audit.write({
+      actorUserId: input.req.auth?.userId || null,
+      organizationId: org.id,
+      action: 'ONSITE_REGISTRATION',
+      targetType: 'REGISTRANT',
+      targetId: registrant.id,
+      outcome: AuditOutcome.SUCCESS,
+      ipAddress: this.getIp(input.req),
+      metadataJson: {
+        registrationLink: link.slug
+      }
+    });
+
+    // Return created registrant with badge info
+    const latestBadge = await this.prisma.badge.findFirst({
+      where: {
+        registrantId: registrant.id
+      },
+      orderBy: {
+        createdAt: 'desc'
+      },
+      select: {
+        id: true,
+        status: true
+      }
+    });
+
+    return {
+      registrantId: registrant.id,
+      referenceCode: registrant.referenceCode,
+      fullName: registrant.fullName,
+      email: registrant.email,
+      eventName: link.event.name,
+      categoryName: link.title,
+      lifecycleStatus: registrant.lifecycleStatus,
+      badgeId: latestBadge?.id || null,
+      badgeStatus: latestBadge?.status || 'PENDING',
+      badgeQueued,
+      createdAt: registrant.createdAt
     };
   }
 }

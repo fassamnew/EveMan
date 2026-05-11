@@ -752,4 +752,170 @@ describe.skipIf(!runIntegration)('Attendees integration (MySQL)', () => {
     expect(responses.find(r => r.fieldKey === 'organization')?.valueText).toBe('Test Corp');
     expect(responses.find(r => r.fieldKey === 'designation')?.valueText).toBe('Manager');
   });
+
+  it('registers walk-in attendees with onsite registration', async () => {
+    const org = await prisma.organization.create({ data: { name: 'Onsite Org', code: 'onsiteorg' } });
+
+    await createOrgUser({
+      email: 'admin@onsiteorg.com',
+      password: 'StrongPass123!',
+      orgId: org.id,
+      roleName: 'ORG_ADMIN'
+    });
+
+    const auth = await loginOrgUser({
+      email: 'admin@onsiteorg.com',
+      password: 'StrongPass123!',
+      orgId: org.id
+    });
+
+    const event = await prisma.event.create({
+      data: {
+        organizationId: org.id,
+        name: 'Onsite Event',
+        status: 'PUBLISHED'
+      }
+    });
+
+    const link = await prisma.registrationLink.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        slug: 'onsite-event',
+        title: 'Onsite Registration'
+      }
+    });
+
+    const badgeTemplate = await prisma.badgeTemplate.create({
+      data: {
+        organizationId: org.id,
+        name: 'OnsiteTemplate',
+        version: 1,
+        configJson: { layout: 'simple' }
+      }
+    });
+
+    await prisma.registrationLink.update({
+      where: { id: link.id },
+      data: { badgeTemplateId: badgeTemplate.id }
+    });
+
+    // Register a walk-in attendee
+    const onsiteRes = await request(app.getHttpServer())
+      .post(`/org/${org.code}/events/${event.id}/register-onsite`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({
+        registrationLinkSlug: 'onsite-event',
+        registration: {
+          fullName: 'Walk In Person',
+          email: 'walkin@person.com',
+          responses: [
+            { fieldKey: 'phone', value: '+251922222222' }
+          ]
+        }
+      });
+
+    expect(onsiteRes.status).toBe(201);
+    expect(onsiteRes.body.referenceCode).toBeDefined();
+    expect(onsiteRes.body.fullName).toBe('Walk In Person');
+    expect(onsiteRes.body.email).toBe('walkin@person.com');
+    expect(onsiteRes.body.lifecycleStatus).toBe('APPROVED');
+    expect(onsiteRes.body.badgeQueued).toBe(true);
+
+    // Verify registrant was created with auto-approval
+    const registrant = await prisma.registrant.findUnique({
+      where: { referenceCode: onsiteRes.body.referenceCode as string }
+    });
+
+    expect(registrant).toBeDefined();
+    expect(registrant?.lifecycleStatus).toBe('APPROVED');
+    expect(registrant?.email).toBe('walkin@person.com');
+  });
+
+  it('prevents duplicate registrations in onsite registration', async () => {
+    const org = await prisma.organization.create({ data: { name: 'Dup Org', code: 'duporg' } });
+
+    await createOrgUser({
+      email: 'admin@duporg.com',
+      password: 'StrongPass123!',
+      orgId: org.id,
+      roleName: 'ORG_ADMIN'
+    });
+
+    const auth = await loginOrgUser({
+      email: 'admin@duporg.com',
+      password: 'StrongPass123!',
+      orgId: org.id
+    });
+
+    const event = await prisma.event.create({
+      data: {
+        organizationId: org.id,
+        name: 'Dup Event',
+        status: 'PUBLISHED'
+      }
+    });
+
+    const link1 = await prisma.registrationLink.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        slug: 'link1',
+        title: 'Link 1'
+      }
+    });
+
+    const link2 = await prisma.registrationLink.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        slug: 'link2',
+        title: 'Link 2'
+      }
+    });
+
+    // Register first attendee
+    const res1 = await request(app.getHttpServer())
+      .post(`/org/${org.code}/events/${event.id}/register-onsite`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({
+        registrationLinkSlug: 'link1',
+        registration: {
+          fullName: 'Dup Person',
+          email: 'dup@person.com'
+        }
+      });
+
+    expect(res1.status).toBe(201);
+
+    // Try to register same email in same event (different link) - should fail
+    const res2 = await request(app.getHttpServer())
+      .post(`/org/${org.code}/events/${event.id}/register-onsite`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({
+        registrationLinkSlug: 'link2',
+        registration: {
+          fullName: 'Dup Person',
+          email: 'dup@person.com'
+        }
+      });
+
+    expect(res2.status).toBe(409);
+    expect(res2.body.message).toContain('Email already registered for this event');
+
+    // Register with same email in same link - should also fail
+    const res3 = await request(app.getHttpServer())
+      .post(`/org/${org.code}/events/${event.id}/register-onsite`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({
+        registrationLinkSlug: 'link1',
+        registration: {
+          fullName: 'Dup Person 2',
+          email: 'dup@person.com'
+        }
+      });
+
+    expect(res3.status).toBe(409);
+    expect(res3.body.message).toContain('Email already registered');
+  });
 });
