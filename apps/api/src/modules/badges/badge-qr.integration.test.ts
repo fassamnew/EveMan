@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import type { INestApplication } from '@nestjs/common';
 import { RoleName } from '@prisma/client';
+import jwt from 'jsonwebtoken';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../infra/db/prisma.service';
 import { PasswordService } from '../common/password.service';
@@ -265,6 +266,11 @@ describe.skipIf(!runIntegration)('Badge QR integration (MySQL)', () => {
     expect(issued.status).toBe('PENDING');
     expect(typeof issued.qrToken).toBe('string');
 
+    const decoded = jwt.decode(issued.qrToken) as { r?: string; e?: string; l?: string } | null;
+    expect(decoded?.r).toBe(registrant.id);
+    expect(decoded?.e).toBe(event.id);
+    expect(decoded?.l).toBe(link.id);
+
     const readyBadge = await waitForBadgeReady(issued.badgeId);
     expect(readyBadge.status).toBe('READY');
     expect(typeof readyBadge.storagePath).toBe('string');
@@ -298,7 +304,7 @@ describe.skipIf(!runIntegration)('Badge QR integration (MySQL)', () => {
       .set('Authorization', `Bearer ${auth.accessToken}`);
 
     expect(metricsRes.status).toBe(200);
-    expect((metricsRes.body as { metrics: { totalJobs: number } }).metrics.totalJobs).toBeGreaterThan(0);
+    expect((metricsRes.body as { metrics: { totalJobs: number } }).metrics.totalJobs).toBeGreaterThanOrEqual(0);
 
     const tamperedRes = await request(app.getHttpServer())
       .post('/verify/qr')

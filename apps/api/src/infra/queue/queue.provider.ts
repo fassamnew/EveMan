@@ -1,8 +1,9 @@
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
+import jwt from 'jsonwebtoken';
 import { createBadgeSignedDownloadUrl, putBadgeArtifact } from '../storage/badge-storage.util';
 import { putReportArtifact } from '../storage/report-storage.util';
 import {
@@ -24,6 +25,17 @@ let systemQueue: Queue | null = null;
 let systemWorker: Worker | null = null;
 let workerPrisma: PrismaClient | null = null;
 
+type WorkerQrPayload = {
+  v: 1;
+  jti: string;
+  r: string;
+  e: string;
+  o: string;
+  l: string;
+  iat: number;
+  exp: number;
+};
+
 function getWorkerPrisma(): PrismaClient {
   if (workerPrisma) {
     return workerPrisma;
@@ -31,6 +43,103 @@ function getWorkerPrisma(): PrismaClient {
 
   workerPrisma = new PrismaClient();
   return workerPrisma;
+}
+
+function getWorkerQrSecret(): string {
+  return process.env.QR_SIGNING_SECRET || process.env.JWT_ACCESS_SECRET || 'dev-qr-secret';
+}
+
+async function issueBadgeForRegistrantFromWorker(registrantId: string): Promise<void> {
+  const prisma = getWorkerPrisma();
+
+  const registrant = await prisma.registrant.findUnique({
+    where: { id: registrantId },
+    include: {
+      registrationLink: {
+        select: {
+          id: true,
+          badgeTemplateId: true
+        }
+      }
+    }
+  });
+
+  if (!registrant) {
+    throw new Error('Registrant not found while issuing badge');
+  }
+
+  const existingBadge = await prisma.badge.findFirst({
+    where: {
+      registrantId: registrant.id,
+      organizationId: registrant.organizationId
+    },
+    select: {
+      id: true
+    }
+  });
+
+  if (existingBadge) {
+    return;
+  }
+
+  const qrCode = await prisma.qrCode.create({
+    data: {
+      registrantId: registrant.id,
+      organizationId: registrant.organizationId,
+      eventId: registrant.eventId,
+      status: 'ACTIVE'
+    }
+  });
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const payload: WorkerQrPayload = {
+    v: 1,
+    jti: qrCode.id,
+    r: registrant.id,
+    e: registrant.eventId,
+    o: registrant.organizationId,
+    l: registrant.registrationLinkId,
+    iat: nowSeconds,
+    exp: nowSeconds + 60 * 60 * 24 * 30
+  };
+
+  const token = jwt.sign(payload, getWorkerQrSecret());
+  const tokenHash = createHash('sha256').update(token).digest('hex');
+
+  await prisma.qrCode.update({
+    where: { id: qrCode.id },
+    data: {
+      tokenHash,
+      expiresAt: new Date(payload.exp * 1000)
+    }
+  });
+
+  const badge = await prisma.badge.create({
+    data: {
+      registrantId: registrant.id,
+      organizationId: registrant.organizationId,
+      eventId: registrant.eventId,
+      registrationLinkId: registrant.registrationLinkId,
+      badgeTemplateId: registrant.registrationLink.badgeTemplateId,
+      qrCodeId: qrCode.id,
+      status: 'PENDING'
+    }
+  });
+
+  const queue = getSystemQueue();
+  await queue.add(
+    'badge.render',
+    { badgeId: badge.id },
+    {
+      attempts: 3,
+      backoff: {
+        type: 'exponential',
+        delay: 1000
+      },
+      removeOnComplete: 100,
+      removeOnFail: 100
+    }
+  );
 }
 
 async function renderBadgeArtifact(input: {
@@ -531,12 +640,18 @@ export function startSystemWorker(): Worker {
                 lifecycleUpdatedAt: new Date()
               }
             });
+
+            try {
+              await issueBadgeForRegistrantFromWorker(existing.id);
+            } catch {
+              // Import processing should complete even if badge queueing fails for a row.
+            }
             successfulRows += 1;
             continue;
           }
 
           const referenceCode = await nextReferenceCode(prisma);
-          await prisma.registrant.create({
+          const createdRegistrant = await prisma.registrant.create({
             data: {
               organizationId: payload.organizationId,
               eventId: payload.eventId,
@@ -554,6 +669,12 @@ export function startSystemWorker(): Worker {
               userAgent: null
             }
           });
+
+          try {
+            await issueBadgeForRegistrantFromWorker(createdRegistrant.id);
+          } catch {
+            // Import processing should complete even if badge queueing fails for a row.
+          }
           successfulRows += 1;
         }
 

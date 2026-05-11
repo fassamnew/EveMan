@@ -175,6 +175,20 @@ describe.skipIf(!runIntegration)('Phase 5 imports and communications integration
       }
     });
 
+    const badgeTemplate = await prisma.badgeTemplate.create({
+      data: {
+        organizationId: org.id,
+        name: 'Import Badge Template',
+        version: 1,
+        configJson: { layout: 'import' }
+      }
+    });
+
+    await prisma.registrationLink.update({
+      where: { id: link.id },
+      data: { badgeTemplateId: badgeTemplate.id }
+    });
+
     await prisma.registrant.create({
       data: {
         organizationId: org.id,
@@ -241,7 +255,19 @@ describe.skipIf(!runIntegration)('Phase 5 imports and communications integration
 
     expect(errorsRes.status).toBe(200);
     expect((errorsRes.body as Array<{ id: string }>).length).toBe(2);
-  });
+
+    const importedRegistrant = await prisma.registrant.findFirst({
+      where: {
+        registrationLinkId: link.id,
+        email: 'new@import.com'
+      },
+      select: {
+        id: true
+      }
+    });
+    expect(importedRegistrant?.id).toBeTruthy();
+
+  }, 15000);
 
   it('supports communication template CRUD and bulk send with failure simulation', async () => {
     const org = await prisma.organization.create({ data: { name: 'Comms Org', code: 'commsorg' } });

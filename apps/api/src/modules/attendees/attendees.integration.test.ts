@@ -313,6 +313,25 @@ describe.skipIf(!runIntegration)('Attendees integration (MySQL)', () => {
 
     expect(approveRes.status).toBe(201);
     expect(approveRes.body.lifecycleStatus).toBe('APPROVED');
+    expect(approveRes.body.badgeQueued).toBe(true);
+
+    let approvedBadgeId: string | null = null;
+    for (let i = 0; i < 40; i += 1) {
+      const approvedBadge = await prisma.badge.findFirst({
+        where: { registrantId: registrant.id },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true }
+      });
+
+      if (approvedBadge?.id) {
+        approvedBadgeId = approvedBadge.id;
+        break;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    expect(approvedBadgeId).toBeTruthy();
 
     const editRes = await request(app.getHttpServer())
       .patch(`/org/${org.code}/attendees/${registrant.id}`)

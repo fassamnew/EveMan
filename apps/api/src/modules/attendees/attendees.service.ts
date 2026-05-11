@@ -301,6 +301,8 @@ export class AttendeesService {
     this.assertWriteAccess(input.orgCode, input.req);
     const org = await this.getOrg(input.orgCode);
     const registrant = await this.getRegistrant(org.id, input.registrantId);
+    const transitionedToApproved =
+      registrant.lifecycleStatus !== AttendeeLifecycleStatus.APPROVED && input.status === AttendeeLifecycleStatus.APPROVED;
 
     const updated = await this.prisma.registrant.update({
       where: { id: registrant.id },
@@ -320,10 +322,21 @@ export class AttendeesService {
       ipAddress: this.getIp(input.req)
     });
 
+    let badgeQueued = false;
+    if (transitionedToApproved) {
+      try {
+        await this.badgeQrService.issueForRegistrant({ registrantId: registrant.id });
+        badgeQueued = true;
+      } catch {
+        // Do not block lifecycle transitions if badge queueing fails.
+      }
+    }
+
     return {
       id: updated.id,
       lifecycleStatus: updated.lifecycleStatus,
-      lifecycleUpdatedAt: updated.lifecycleUpdatedAt
+      lifecycleUpdatedAt: updated.lifecycleUpdatedAt,
+      badgeQueued
     };
   }
 

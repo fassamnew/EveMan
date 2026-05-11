@@ -28,6 +28,7 @@ type QrPayload = {
   r: string;
   e: string;
   o: string;
+  l: string;
   iat: number;
   exp: number;
 };
@@ -250,6 +251,7 @@ export class BadgeQrService {
       r: registrant.id,
       e: registrant.eventId,
       o: registrant.organizationId,
+      l: registrant.registrationLinkId,
       iat: nowSeconds,
       exp: nowSeconds + 60 * 60 * 24 * 30
     };
@@ -481,6 +483,7 @@ export class BadgeQrService {
           select: {
             id: true,
             fullName: true,
+            registrationLinkId: true,
             event: {
               select: {
                 id: true,
@@ -503,6 +506,13 @@ export class BadgeQrService {
       throw new BadRequestException({
         status: 'INVALID',
         reason: 'TOKEN_HASH_MISMATCH'
+      });
+    }
+
+    if (decoded.l !== qr.registrant.registrationLinkId) {
+      throw new BadRequestException({
+        status: 'INVALID',
+        reason: 'TOKEN_LINK_MISMATCH'
       });
     }
 
