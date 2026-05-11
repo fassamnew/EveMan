@@ -162,7 +162,6 @@ Phone number
 Organization/company
 Designation/title
 Country/city
-Attendee category
 Photo upload
 Consent checkbox
 6.2 Custom Field Types

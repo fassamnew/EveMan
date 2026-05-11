@@ -130,6 +130,21 @@ export class AttendeesService {
               deliveredAt: true,
               createdAt: true
             }
+          },
+          responses: {
+            select: {
+              fieldKey: true,
+              valueText: true
+            }
+          },
+          checkins: {
+            orderBy: {
+              scannedAt: 'desc'
+            },
+            take: 1,
+            select: {
+              scannedAt: true
+            }
           }
         }
       })
@@ -143,9 +158,13 @@ export class AttendeesService {
         email: item.email,
         lifecycleStatus: item.lifecycleStatus,
         createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
         event: item.event,
         registrationLink: item.registrationLink,
-        latestBadge: item.badges[0] || null
+        latestBadge: item.badges[0] || null,
+        responses: item.responses,
+        hasCheckedIn: item.checkins.length > 0,
+        lastCheckinAt: item.checkins[0]?.scannedAt || null
       })),
       pagination: {
         total,
@@ -245,6 +264,11 @@ export class AttendeesService {
     const registrant = await this.getRegistrant(org.id, input.registrantId);
 
     try {
+      // Track if we need to regenerate badge due to data changes
+      const nameChanged = input.dto.fullName && input.dto.fullName !== registrant.fullName;
+      const emailChanged = input.dto.email && this.normalizeEmail(input.dto.email) !== registrant.email;
+      const dataChanged = nameChanged || emailChanged || (input.dto.responses && input.dto.responses.length > 0);
+
       const updated = await this.prisma.registrant.update({
         where: {
           id: registrant.id
@@ -255,6 +279,28 @@ export class AttendeesService {
         }
       });
 
+      // Update response fields if provided
+      if (input.dto.responses && input.dto.responses.length > 0) {
+        for (const response of input.dto.responses) {
+          await this.prisma.registrantResponse.upsert({
+            where: {
+              registrantId_fieldKey: {
+                registrantId: registrant.id,
+                fieldKey: response.fieldKey
+              }
+            },
+            create: {
+              registrantId: registrant.id,
+              fieldKey: response.fieldKey,
+              valueText: response.value
+            },
+            update: {
+              valueText: response.value
+            }
+          });
+        }
+      }
+
       await this.audit.write({
         actorUserId: input.req.auth?.userId || null,
         organizationId: org.id,
@@ -264,6 +310,18 @@ export class AttendeesService {
         outcome: AuditOutcome.SUCCESS,
         ipAddress: this.getIp(input.req)
       });
+
+      // Regenerate badge if registrant data changed and they are approved
+      if (dataChanged && registrant.lifecycleStatus === AttendeeLifecycleStatus.APPROVED) {
+        try {
+          await this.badgeQrService.regenerateBadge({
+            orgCode: org.code,
+            registrantId: registrant.id
+          });
+        } catch {
+          // Log but don't fail the update if badge regeneration fails
+        }
+      }
 
       return updated;
     } catch (error) {
@@ -410,6 +468,108 @@ export class AttendeesService {
       registrantId: registrant.id,
       badgeId,
       status: 'QUEUED'
+    };
+  }
+
+  async manualCheckIn(input: { orgCode: string; registrantId: string; req: RequestWithAuth }) {
+    this.assertWriteAccess(input.orgCode, input.req);
+    const org = await this.getOrg(input.orgCode);
+    const registrant = await this.getRegistrant(org.id, input.registrantId);
+
+    if (registrant.lifecycleStatus !== AttendeeLifecycleStatus.APPROVED) {
+      throw new BadRequestException('Only approved attendees can be checked in');
+    }
+
+    // Check if already checked in
+    const existingCheckIn = await this.prisma.checkin.findUnique({
+      where: {
+        eventId_registrantId: {
+          eventId: registrant.eventId,
+          registrantId: registrant.id
+        }
+      }
+    });
+
+    if (existingCheckIn) {
+      throw new BadRequestException('Attendee is already checked in');
+    }
+
+    // Create manual check-in record
+    const checkin = await this.prisma.checkin.create({
+      data: {
+        organizationId: org.id,
+        eventId: registrant.eventId,
+        registrantId: registrant.id,
+        usherUserId: input.req.auth?.userId || null,
+        deviceId: 'manual-organizer',
+        idempotencyKey: `manual-${registrant.id}-${Date.now()}`,
+        source: 'MANUAL',
+        scannedAt: new Date(),
+        syncState: 'ACCEPTED'
+      }
+    });
+
+    await this.audit.write({
+      actorUserId: input.req.auth?.userId || null,
+      organizationId: org.id,
+      action: 'ATTENDEE_MANUAL_CHECKIN',
+      targetType: 'REGISTRANT',
+      targetId: registrant.id,
+      outcome: AuditOutcome.SUCCESS,
+      ipAddress: this.getIp(input.req),
+      metadataJson: {
+        checkinId: checkin.id
+      }
+    });
+
+    return {
+      registrantId: registrant.id,
+      checkinId: checkin.id,
+      checkedInAt: checkin.scannedAt
+    };
+  }
+
+  async cancelRegistration(input: { orgCode: string; registrantId: string; req: RequestWithAuth }) {
+    this.assertWriteAccess(input.orgCode, input.req);
+    const org = await this.getOrg(input.orgCode);
+    const registrant = await this.getRegistrant(org.id, input.registrantId);
+
+    // Cannot cancel if already checked in
+    const checkin = await this.prisma.checkin.findUnique({
+      where: {
+        eventId_registrantId: {
+          eventId: registrant.eventId,
+          registrantId: registrant.id
+        }
+      }
+    });
+
+    if (checkin) {
+      throw new BadRequestException('Cannot cancel registration for already checked-in attendee');
+    }
+
+    const updated = await this.prisma.registrant.update({
+      where: { id: registrant.id },
+      data: {
+        lifecycleStatus: AttendeeLifecycleStatus.REJECTED,
+        lifecycleUpdatedAt: new Date()
+      }
+    });
+
+    await this.audit.write({
+      actorUserId: input.req.auth?.userId || null,
+      organizationId: org.id,
+      action: 'ATTENDEE_CANCEL',
+      targetType: 'REGISTRANT',
+      targetId: registrant.id,
+      outcome: AuditOutcome.SUCCESS,
+      ipAddress: this.getIp(input.req)
+    });
+
+    return {
+      registrantId: registrant.id,
+      lifecycleStatus: updated.lifecycleStatus,
+      lifecycleUpdatedAt: updated.lifecycleUpdatedAt
     };
   }
 }

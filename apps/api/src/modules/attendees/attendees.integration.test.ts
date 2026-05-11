@@ -501,4 +501,255 @@ describe.skipIf(!runIntegration)('Attendees integration (MySQL)', () => {
     expect(response.body.items[0].status).toBe('FAILED');
     expect(response.body.pagination.total).toBe(1);
   });
+
+  it('allows manual check-in and prevents duplicate check-ins', async () => {
+    const org = await prisma.organization.create({ data: { name: 'Check Org', code: 'checkorg' } });
+
+    await createOrgUser({
+      email: 'admin@checkorg.com',
+      password: 'StrongPass123!',
+      orgId: org.id,
+      roleName: 'ORG_ADMIN'
+    });
+
+    const auth = await loginOrgUser({
+      email: 'admin@checkorg.com',
+      password: 'StrongPass123!',
+      orgId: org.id
+    });
+
+    const event = await prisma.event.create({
+      data: {
+        organizationId: org.id,
+        name: 'Check Event',
+        status: 'PUBLISHED'
+      }
+    });
+
+    const link = await prisma.registrationLink.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        slug: 'check-event',
+        title: 'Check Registration'
+      }
+    });
+
+    const registrant = await prisma.registrant.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        registrationLinkId: link.id,
+        referenceCode: 'CHECK001',
+        email: 'check@person.com',
+        fullName: 'Check Person',
+        lifecycleStatus: 'APPROVED',
+        consentAccepted: true,
+        consentPolicyVersion: 'v1',
+        consentCapturedAt: new Date()
+      }
+    });
+
+    const checkInRes = await request(app.getHttpServer())
+      .post(`/org/${org.code}/attendees/${registrant.id}/check-in`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({});
+
+    expect(checkInRes.status).toBe(201);
+    expect(checkInRes.body.checkinId).toBeDefined();
+    expect(checkInRes.body.checkedInAt).toBeDefined();
+
+    // Verify check-in was recorded
+    const checkin = await prisma.checkin.findUnique({
+      where: {
+        eventId_registrantId: {
+          eventId: event.id,
+          registrantId: registrant.id
+        }
+      }
+    });
+
+    expect(checkin).toBeDefined();
+    expect(checkin?.source).toBe('MANUAL');
+
+    // Try to check in again - should fail
+    const duplicateRes = await request(app.getHttpServer())
+      .post(`/org/${org.code}/attendees/${registrant.id}/check-in`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({});
+
+    expect(duplicateRes.status).toBe(400);
+    expect(duplicateRes.body.message).toContain('already checked in');
+  });
+
+  it('allows canceling registrations and prevents cancel after check-in', async () => {
+    const org = await prisma.organization.create({ data: { name: 'Cancel Org', code: 'cancelorg' } });
+
+    await createOrgUser({
+      email: 'admin@cancelorg.com',
+      password: 'StrongPass123!',
+      orgId: org.id,
+      roleName: 'ORG_ADMIN'
+    });
+
+    const auth = await loginOrgUser({
+      email: 'admin@cancelorg.com',
+      password: 'StrongPass123!',
+      orgId: org.id
+    });
+
+    const event = await prisma.event.create({
+      data: {
+        organizationId: org.id,
+        name: 'Cancel Event',
+        status: 'PUBLISHED'
+      }
+    });
+
+    const link = await prisma.registrationLink.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        slug: 'cancel-event',
+        title: 'Cancel Registration'
+      }
+    });
+
+    const registrant1 = await prisma.registrant.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        registrationLinkId: link.id,
+        referenceCode: 'CANCEL001',
+        email: 'cancel1@person.com',
+        fullName: 'Cancel Person 1',
+        lifecycleStatus: 'APPROVED',
+        consentAccepted: true,
+        consentPolicyVersion: 'v1',
+        consentCapturedAt: new Date()
+      }
+    });
+
+    // Cancel registration that hasn't been checked in
+    const cancelRes = await request(app.getHttpServer())
+      .post(`/org/${org.code}/attendees/${registrant1.id}/cancel`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({});
+
+    expect(cancelRes.status).toBe(201);
+    expect(cancelRes.body.lifecycleStatus).toBe('REJECTED');
+
+    // Verify status was updated
+    const updated = await prisma.registrant.findUnique({
+      where: { id: registrant1.id },
+      select: { lifecycleStatus: true }
+    });
+
+    expect(updated?.lifecycleStatus).toBe('REJECTED');
+
+    // Create another registrant, check them in, then try to cancel
+    const registrant2 = await prisma.registrant.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        registrationLinkId: link.id,
+        referenceCode: 'CANCEL002',
+        email: 'cancel2@person.com',
+        fullName: 'Cancel Person 2',
+        lifecycleStatus: 'APPROVED',
+        consentAccepted: true,
+        consentPolicyVersion: 'v1',
+        consentCapturedAt: new Date()
+      }
+    });
+
+    // Check in first
+    await request(app.getHttpServer())
+      .post(`/org/${org.code}/attendees/${registrant2.id}/check-in`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({});
+
+    // Try to cancel after check-in - should fail
+    const cancelAfterCheckInRes = await request(app.getHttpServer())
+      .post(`/org/${org.code}/attendees/${registrant2.id}/cancel`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({});
+
+    expect(cancelAfterCheckInRes.status).toBe(400);
+    expect(cancelAfterCheckInRes.body.message).toContain('already checked-in');
+  });
+
+  it('updates attendee with custom response fields', async () => {
+    const org = await prisma.organization.create({ data: { name: 'Response Org', code: 'resporg' } });
+
+    await createOrgUser({
+      email: 'admin@resporg.com',
+      password: 'StrongPass123!',
+      orgId: org.id,
+      roleName: 'ORG_ADMIN'
+    });
+
+    const auth = await loginOrgUser({
+      email: 'admin@resporg.com',
+      password: 'StrongPass123!',
+      orgId: org.id
+    });
+
+    const event = await prisma.event.create({
+      data: {
+        organizationId: org.id,
+        name: 'Response Event',
+        status: 'PUBLISHED'
+      }
+    });
+
+    const link = await prisma.registrationLink.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        slug: 'response-event',
+        title: 'Response Registration'
+      }
+    });
+
+    const registrant = await prisma.registrant.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        registrationLinkId: link.id,
+        referenceCode: 'RESP001',
+        email: 'resp@person.com',
+        fullName: 'Response Person',
+        lifecycleStatus: 'APPROVED',
+        consentAccepted: true,
+        consentPolicyVersion: 'v1',
+        consentCapturedAt: new Date()
+      }
+    });
+
+    const updateRes = await request(app.getHttpServer())
+      .patch(`/org/${org.code}/attendees/${registrant.id}`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({
+        fullName: 'Updated Response Person',
+        email: 'updated.resp@person.com',
+        responses: [
+          { fieldKey: 'phone', value: '+251911111111' },
+          { fieldKey: 'organization', value: 'Test Corp' },
+          { fieldKey: 'designation', value: 'Manager' }
+        ]
+      });
+
+    expect(updateRes.status).toBe(200);
+
+    // Verify responses were saved
+    const responses = await prisma.registrantResponse.findMany({
+      where: { registrantId: registrant.id }
+    });
+
+    expect(responses).toHaveLength(3);
+    expect(responses.find(r => r.fieldKey === 'phone')?.valueText).toBe('+251911111111');
+    expect(responses.find(r => r.fieldKey === 'organization')?.valueText).toBe('Test Corp');
+    expect(responses.find(r => r.fieldKey === 'designation')?.valueText).toBe('Manager');
+  });
 });

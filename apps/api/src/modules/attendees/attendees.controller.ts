@@ -73,4 +73,24 @@ export class AttendeesController {
   ) {
     return this.attendeesService.resendBadge({ orgCode, registrantId, req });
   }
+
+  @UseGuards(AccessTokenGuard, OrgAccessGuard, ManagementRateLimitGuard)
+  @Post('org/:orgCode/attendees/:registrantId/check-in')
+  async manualCheckIn(
+    @Param('orgCode') orgCode: string,
+    @Param('registrantId') registrantId: string,
+    @Req() req: RequestWithAuth
+  ) {
+    return this.attendeesService.manualCheckIn({ orgCode, registrantId, req });
+  }
+
+  @UseGuards(AccessTokenGuard, OrgAccessGuard, ManagementRateLimitGuard)
+  @Post('org/:orgCode/attendees/:registrantId/cancel')
+  async cancelRegistration(
+    @Param('orgCode') orgCode: string,
+    @Param('registrantId') registrantId: string,
+    @Req() req: RequestWithAuth
+  ) {
+    return this.attendeesService.cancelRegistration({ orgCode, registrantId, req });
+  }
 }

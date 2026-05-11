@@ -96,6 +96,7 @@ enum ImportDuplicateStrategy {
 enum CheckinSource {
   MOBILE_ONLINE
   OFFLINE_SYNC
+  MANUAL
 }
 
 enum CheckinSyncState {
