@@ -288,6 +288,13 @@ export default function BadgeTemplatesPage() {
                     </button>
                     <button
                       type="button"
+                      onClick={() => router.push(`/o/${orgCode}/templates/badges/${item.id}`)}
+                      className="rounded-md border border-amber-500 px-3 py-1 text-amber-200"
+                    >
+                      Designer
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => void disableTemplate(item.id)}
                       disabled={!item.isActive}
                       className="rounded-md border border-amber-500 px-3 py-1 text-amber-200 disabled:cursor-not-allowed disabled:opacity-50"

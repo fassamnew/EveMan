@@ -16,6 +16,7 @@ type LinkItem = {
   title: string;
   isActive: boolean;
   linkTypeId: string | null;
+  badgeTemplateId?: string | null;
   linkType: LinkType | null;
   rule?: {
     visibility: 'PUBLIC' | 'UNLISTED' | 'PRIVATE';
@@ -473,12 +474,21 @@ export default function EventLinksPage() {
                         {item.rule?.opensAt && <span>Opens: {new Date(item.rule.opensAt).toLocaleString()}</span>}
                         {item.rule?.closesAt && <span>Closes: {new Date(item.rule.closesAt).toLocaleString()}</span>}
                         <span>{item.rule?.approvalMode === 'MANUAL' ? 'Manual approval' : 'Auto-approve'}</span>
+                        {item.badgeTemplateId ? <span>Badge template assigned</span> : <span>No badge template</span>}
                       </div>
                     </div>
                     <div className="flex flex-shrink-0 flex-wrap gap-2">
                       <button type="button" onClick={() => openEdit(item)}
                         className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 transition">
                         Edit
+                      </button>
+                      <button type="button" onClick={() => router.push(`/o/${orgCode}/events/${eventId}/links/${item.id}/form`)}
+                        className="rounded-lg border border-cyan-600 px-3 py-1.5 text-xs text-cyan-200 hover:bg-cyan-600/10 transition">
+                        Form Builder
+                      </button>
+                      <button type="button" onClick={() => router.push(`/o/${orgCode}/events/${eventId}/links/${item.id}/design`)}
+                        className="rounded-lg border border-amber-500/60 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-500/10 transition">
+                        Page Designer
                       </button>
                       <button type="button" onClick={() => void onDelete(item.id)}
                         className="rounded-lg border border-rose-500/50 px-3 py-1.5 text-xs text-rose-200 hover:bg-rose-500/10 transition">
