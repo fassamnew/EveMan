@@ -270,4 +270,173 @@ describe.skipIf(!runIntegration)('Usher integration (MySQL)', () => {
 
     expect(response.status).toBe(400);
   });
+
+  it('returns WRONG_EVENT and NOT_APPROVED statuses when applicable', async () => {
+    const org = await prisma.organization.create({ data: { name: 'State Org', code: 'stateorg' } });
+
+    await createOrgUser({
+      email: 'usher@state.org',
+      password: 'StrongPass123!',
+      orgId: org.id,
+      roleName: 'ORG_STAFF'
+    });
+
+    const auth = await loginOrgUser({
+      email: 'usher@state.org',
+      password: 'StrongPass123!',
+      orgId: org.id
+    });
+
+    const eventA = await prisma.event.create({
+      data: {
+        organizationId: org.id,
+        name: 'State Event A',
+        status: 'PUBLISHED'
+      }
+    });
+
+    const eventB = await prisma.event.create({
+      data: {
+        organizationId: org.id,
+        name: 'State Event B',
+        status: 'PUBLISHED'
+      }
+    });
+
+    const linkA = await prisma.registrationLink.create({
+      data: {
+        organizationId: org.id,
+        eventId: eventA.id,
+        slug: 'state-a',
+        title: 'State A Link'
+      }
+    });
+
+    const pendingRegistrant = await prisma.registrant.create({
+      data: {
+        organizationId: org.id,
+        eventId: eventA.id,
+        registrationLinkId: linkA.id,
+        referenceCode: 'STATE001',
+        email: 'pending@state.org',
+        fullName: 'Pending State',
+        lifecycleStatus: 'PENDING',
+        consentAccepted: true,
+        consentPolicyVersion: 'v1',
+        consentCapturedAt: new Date()
+      }
+    });
+
+    const issued = await badgeQrService.issueForRegistrant({ registrantId: pendingRegistrant.id });
+
+    const wrongEventRes = await request(app.getHttpServer())
+      .post('/usher/checkins')
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({
+        token: issued.qrToken,
+        selectedEventId: eventB.id,
+        idempotencyKey: 'state-001',
+        deviceId: 'device-s1',
+        source: 'MOBILE_ONLINE'
+      });
+
+    expect(wrongEventRes.status).toBe(201);
+    expect(wrongEventRes.body.status).toBe('WRONG_EVENT');
+
+    const notApprovedRes = await request(app.getHttpServer())
+      .post('/usher/checkins')
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({
+        token: issued.qrToken,
+        selectedEventId: eventA.id,
+        idempotencyKey: 'state-002',
+        deviceId: 'device-s2',
+        source: 'MOBILE_ONLINE'
+      });
+
+    expect(notApprovedRes.status).toBe(201);
+    expect(notApprovedRes.body.status).toBe('NOT_APPROVED');
+  });
+
+  it('supports manual attendee search by name, email, phone, and reference', async () => {
+    const org = await prisma.organization.create({ data: { name: 'Search Org', code: 'searchorg' } });
+
+    await createOrgUser({
+      email: 'usher@search.org',
+      password: 'StrongPass123!',
+      orgId: org.id,
+      roleName: 'ORG_STAFF'
+    });
+
+    const auth = await loginOrgUser({
+      email: 'usher@search.org',
+      password: 'StrongPass123!',
+      orgId: org.id
+    });
+
+    const event = await prisma.event.create({
+      data: {
+        organizationId: org.id,
+        name: 'Search Event',
+        status: 'PUBLISHED'
+      }
+    });
+
+    const link = await prisma.registrationLink.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        slug: 'search-event',
+        title: 'Search Category'
+      }
+    });
+
+    const registrant = await prisma.registrant.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        registrationLinkId: link.id,
+        referenceCode: 'SEARCH001',
+        email: 'search.person@org.com',
+        fullName: 'Search Person',
+        lifecycleStatus: 'APPROVED',
+        consentAccepted: true,
+        consentPolicyVersion: 'v1',
+        consentCapturedAt: new Date()
+      }
+    });
+
+    await prisma.registrantResponse.createMany({
+      data: [
+        {
+          registrantId: registrant.id,
+          fieldKey: 'phone',
+          valueText: '+251933333333'
+        },
+        {
+          registrantId: registrant.id,
+          fieldKey: '__photo_upload__',
+          valueText: 'https://cdn.example.com/p.jpg'
+        }
+      ]
+    });
+
+    const byNameRes = await request(app.getHttpServer())
+      .get('/usher/search')
+      .query({ q: 'Search Person', eventId: event.id })
+      .set('Authorization', `Bearer ${auth.accessToken}`);
+
+    expect(byNameRes.status).toBe(200);
+    expect(byNameRes.body.items).toHaveLength(1);
+    expect(byNameRes.body.items[0].referenceCode).toBe('SEARCH001');
+
+    const byPhoneRes = await request(app.getHttpServer())
+      .get('/usher/search')
+      .query({ q: '+251933333333', eventId: event.id })
+      .set('Authorization', `Bearer ${auth.accessToken}`);
+
+    expect(byPhoneRes.status).toBe(200);
+    expect(byPhoneRes.body.items).toHaveLength(1);
+    expect(byPhoneRes.body.items[0].photoUrl).toBe('https://cdn.example.com/p.jpg');
+  });
 });

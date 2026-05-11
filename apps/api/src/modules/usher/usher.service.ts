@@ -6,6 +6,7 @@ import { PrismaService } from '../../infra/db/prisma.service';
 import { AuditService } from '../common/audit.service';
 import type { RequestWithAuth } from '../common/request-with-auth';
 import type { CreateCheckinDto } from './dto/create-checkin.dto';
+import type { SearchAttendeesDto } from './dto/search-attendees.dto';
 
 type QrPayload = {
   v: 1;
@@ -13,6 +14,7 @@ type QrPayload = {
   r: string;
   e: string;
   o: string;
+  l?: string;
   iat: number;
   exp: number;
 };
@@ -86,6 +88,89 @@ export class UsherService {
     };
   }
 
+  async searchAttendees(input: { dto: SearchAttendeesDto; req: RequestWithAuth }) {
+    const auth = this.requireUsherAccess(input.req);
+    const query = input.dto.q.trim();
+
+    const attendees = await this.prisma.registrant.findMany({
+      where: {
+        organizationId: auth.organizationId,
+        eventId: input.dto.eventId,
+        OR: [
+          { fullName: { contains: query } },
+          { email: { contains: query } },
+          { referenceCode: { contains: query } },
+          {
+            responses: {
+              some: {
+                valueText: { contains: query }
+              }
+            }
+          }
+        ]
+      },
+      orderBy: {
+        createdAt: 'desc'
+      },
+      take: 25,
+      include: {
+        event: {
+          select: {
+            id: true,
+            name: true
+          }
+        },
+        registrationLink: {
+          select: {
+            id: true,
+            title: true
+          }
+        },
+        responses: {
+          where: {
+            fieldKey: '__photo_upload__'
+          },
+          take: 1,
+          select: {
+            valueText: true
+          }
+        },
+        checkins: {
+          orderBy: {
+            scannedAt: 'desc'
+          },
+          take: 1,
+          select: {
+            id: true,
+            scannedAt: true
+          }
+        }
+      }
+    });
+
+    return {
+      items: attendees.map(item => ({
+        id: item.id,
+        referenceCode: item.referenceCode,
+        fullName: item.fullName,
+        email: item.email,
+        lifecycleStatus: item.lifecycleStatus,
+        event: item.event,
+        category: item.registrationLink.title,
+        photoUrl: item.responses[0]?.valueText || null,
+        checkin: item.checkins[0]
+          ? {
+              status: 'ALREADY_CHECKED_IN',
+              checkinId: item.checkins[0].id,
+              scannedAt: item.checkins[0].scannedAt
+            }
+          : {
+              status: 'NOT_CHECKED_IN'
+            }
+      }))
+    };
+  }
+
   async createCheckin(input: { dto: CreateCheckinDto; req: RequestWithAuth }) {
     const auth = this.requireUsherAccess(input.req);
 
@@ -151,7 +236,40 @@ export class UsherService {
     }
 
     if (qr.registrant.organizationId !== auth.organizationId) {
-      throw new ForbiddenException('Token organization mismatch');
+      return {
+        status: 'ACCESS_DENIED',
+        reason: 'ORGANIZATION_MISMATCH'
+      };
+    }
+
+    if (input.dto.selectedEventId && input.dto.selectedEventId !== qr.registrant.eventId) {
+      return {
+        status: 'WRONG_EVENT',
+        registrant: {
+          id: qr.registrant.id,
+          name: qr.registrant.fullName
+        },
+        event: {
+          id: qr.registrant.eventId,
+          name: qr.registrant.event.name
+        }
+      };
+    }
+
+    const registrantStatus = await this.prisma.registrant.findUnique({
+      where: {
+        id: qr.registrant.id
+      },
+      select: {
+        lifecycleStatus: true
+      }
+    });
+
+    if (!registrantStatus || registrantStatus.lifecycleStatus !== 'APPROVED') {
+      return {
+        status: 'NOT_APPROVED',
+        reason: registrantStatus?.lifecycleStatus || 'UNKNOWN'
+      };
     }
 
     const duplicate = await this.prisma.checkin.findUnique({
@@ -198,6 +316,8 @@ export class UsherService {
       throw new BadRequestException('Invalid scannedAt timestamp');
     }
 
+    const persistedSource = input.dto.source === 'MOBILE_OFFLINE' ? 'OFFLINE_SYNC' : input.dto.source;
+
     const created = await this.prisma.checkin.create({
       data: {
         organizationId: auth.organizationId,
@@ -206,7 +326,7 @@ export class UsherService {
         usherUserId: auth.userId,
         deviceId: input.dto.deviceId,
         idempotencyKey: input.dto.idempotencyKey,
-        source: (input.dto.source || 'MOBILE_ONLINE') as CheckinSource,
+        source: (persistedSource || 'MOBILE_ONLINE') as CheckinSource,
         syncState: 'ACCEPTED',
         scannedAt
       }

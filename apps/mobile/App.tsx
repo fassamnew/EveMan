@@ -40,7 +40,14 @@ type AssignmentsResponse = {
 };
 
 type CheckinResult = {
-  status: 'ACCEPTED' | 'DUPLICATE' | 'IDEMPOTENT_REPLAY' | 'INVALID';
+  status:
+    | 'ACCEPTED'
+    | 'DUPLICATE'
+    | 'IDEMPOTENT_REPLAY'
+    | 'INVALID'
+    | 'WRONG_EVENT'
+    | 'NOT_APPROVED'
+    | 'ACCESS_DENIED';
   reason?: string;
   checkinId?: string;
   eventId?: string;
@@ -58,6 +65,7 @@ type CheckinResult = {
 type PendingCheckin = {
   id: string;
   token: string;
+  selectedEventId: string | null;
   idempotencyKey: string;
   deviceId: string;
   source: 'MOBILE_OFFLINE';
@@ -65,6 +73,29 @@ type PendingCheckin = {
   attempts: number;
   nextRetryAt: string | null;
   lastError: string | null;
+};
+
+type ManualSearchResult = {
+  id: string;
+  referenceCode: string;
+  fullName: string;
+  email: string;
+  lifecycleStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
+  event: {
+    id: string;
+    name: string;
+  };
+  category: string;
+  photoUrl: string | null;
+  checkin:
+    | {
+        status: 'ALREADY_CHECKED_IN';
+        checkinId: string;
+        scannedAt: string;
+      }
+    | {
+        status: 'NOT_CHECKED_IN';
+      };
 };
 
 type EncryptedQueuePayload = {
@@ -82,7 +113,7 @@ type ScanHistoryEntry = {
 };
 
 type HistoryFilter = 'ALL' | 'QUEUED' | 'SYNCED' | 'FAILED';
-type AppScreen = 'HOME' | 'HISTORY' | 'TELEMETRY';
+type AppScreen = 'HOME' | 'SEARCH' | 'HISTORY' | 'SETTINGS';
 
 type TelemetryEntry = {
   id: string;
@@ -357,6 +388,7 @@ async function runBackgroundQueueSyncOnce(): Promise<BackgroundFetch.BackgroundF
           },
           body: JSON.stringify({
             token: item.token,
+            selectedEventId: item.selectedEventId,
             idempotencyKey: item.idempotencyKey,
             deviceId: item.deviceId,
             source: item.source,
@@ -443,6 +475,9 @@ export default function App() {
   const [deferredCheckinCount, setDeferredCheckinCount] = useState(0);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [scanHistory, setScanHistory] = useState<ScanHistoryEntry[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<ManualSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('ALL');
   const [screen, setScreen] = useState<AppScreen>('HOME');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -735,6 +770,7 @@ export default function App() {
     const nextItem: PendingCheckin = {
       id: createIdempotencyKey(),
       token,
+      selectedEventId,
       idempotencyKey: createIdempotencyKey(),
       deviceId: 'mobile-usher-device',
       source: 'MOBILE_OFFLINE',
@@ -825,11 +861,41 @@ export default function App() {
   async function parseCheckinResponse(response: Response): Promise<CheckinResult | null> {
     if (response.status === 400) {
       const payload = (await response.json().catch(() => ({}))) as {
-        message?: { status?: 'INVALID'; reason?: string };
+        message?: {
+          status?:
+            | 'INVALID'
+            | 'WRONG_EVENT'
+            | 'NOT_APPROVED'
+            | 'ACCESS_DENIED'
+            | 'DUPLICATE'
+            | 'IDEMPOTENT_REPLAY'
+            | 'ACCEPTED';
+          reason?: string;
+          registrant?: { id: string; name: string };
+          event?: { id: string; name: string };
+        };
       };
+
+      const status = payload.message?.status;
+      if (status && status !== 'INVALID') {
+        return {
+          status,
+          reason: payload.message?.reason,
+          registrant: payload.message?.registrant,
+          event: payload.message?.event
+        } as CheckinResult;
+      }
+
       return {
         status: 'INVALID',
         reason: payload.message?.reason || 'TOKEN_INVALID'
+      };
+    }
+
+    if (response.status === 403) {
+      return {
+        status: 'ACCESS_DENIED',
+        reason: 'FORBIDDEN'
       };
     }
 
@@ -838,6 +904,50 @@ export default function App() {
     }
 
     return (await response.json()) as CheckinResult;
+  }
+
+  async function runManualSearch(): Promise<void> {
+    if (!searchQuery.trim()) {
+      setError('Enter a name, email, phone, or reference code');
+      return;
+    }
+
+    setError(null);
+    setIsSearching(true);
+
+    try {
+      const params = new URLSearchParams({ q: searchQuery.trim() });
+      if (selectedEventId) {
+        params.set('eventId', selectedEventId);
+      }
+
+      const response = await authenticatedFetch(`/usher/search?${params.toString()}`);
+      if (!response || !response.ok) {
+        setError('Manual search failed');
+        setSearchResults([]);
+        return;
+      }
+
+      const payload = (await response.json()) as { items: ManualSearchResult[] };
+      setSearchResults(payload.items || []);
+    } catch {
+      setError('Network error while searching attendees');
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }
+
+  async function clearScanHistory(): Promise<void> {
+    await SecureStore.deleteItemAsync(SCAN_HISTORY_KEY);
+    setScanHistory([]);
+  }
+
+  async function clearOfflineQueue(): Promise<void> {
+    await SecureStore.deleteItemAsync(OFFLINE_QUEUE_KEY);
+    setQueuedCheckinCount(0);
+    setDeferredCheckinCount(0);
+    setSyncMessage('Offline queue cleared');
   }
 
   async function syncPendingQueue(): Promise<void> {
@@ -888,6 +998,7 @@ export default function App() {
             },
             body: JSON.stringify({
               token: item.token,
+              selectedEventId: item.selectedEventId,
               idempotencyKey: item.idempotencyKey,
               deviceId: item.deviceId,
               source: item.source,
@@ -1082,6 +1193,7 @@ export default function App() {
         },
         body: JSON.stringify({
           token: effectiveToken,
+          selectedEventId,
           idempotencyKey: createIdempotencyKey(),
           deviceId: 'mobile-usher-device',
           source: 'MOBILE_ONLINE',
@@ -1189,6 +1301,18 @@ export default function App() {
 
     if (lastCheckin.status === 'IDEMPOTENT_REPLAY') {
       return 'IDEMPOTENT_REPLAY: this scan request was already processed.';
+    }
+
+    if (lastCheckin.status === 'WRONG_EVENT') {
+      return `WRONG_EVENT: badge belongs to ${lastCheckin.event?.name || 'another event'}.`;
+    }
+
+    if (lastCheckin.status === 'NOT_APPROVED') {
+      return `NOT_APPROVED: attendee is ${lastCheckin.reason || 'not approved'} for entry.`;
+    }
+
+    if (lastCheckin.status === 'ACCESS_DENIED') {
+      return 'ACCESS_DENIED: your usher account cannot process this attendee for this context.';
     }
 
     return `INVALID: ${lastCheckin.reason || 'Unknown token error'}`;
@@ -1340,18 +1464,61 @@ export default function App() {
                 <Text style={styles.navChipText}>Home</Text>
               </Pressable>
               <Pressable
+                style={[styles.navChip, screen === 'SEARCH' ? styles.navChipActive : null]}
+                onPress={() => setScreen('SEARCH')}
+              >
+                <Text style={styles.navChipText}>Search</Text>
+              </Pressable>
+              <Pressable
                 style={[styles.navChip, screen === 'HISTORY' ? styles.navChipActive : null]}
                 onPress={() => setScreen('HISTORY')}
               >
                 <Text style={styles.navChipText}>History</Text>
               </Pressable>
               <Pressable
-                style={[styles.navChip, screen === 'TELEMETRY' ? styles.navChipActive : null]}
-                onPress={() => setScreen('TELEMETRY')}
+                style={[styles.navChip, screen === 'SETTINGS' ? styles.navChipActive : null]}
+                onPress={() => setScreen('SETTINGS')}
               >
-                <Text style={styles.navChipText}>Telemetry</Text>
+                <Text style={styles.navChipText}>Settings</Text>
               </Pressable>
             </View>
+
+            {screen === 'SEARCH' ? (
+              <View style={styles.sectionStack}>
+                <Text style={styles.label}>Manual Search</Text>
+                <Text style={styles.meta}>Find attendees by name, email, phone, or reference code.</Text>
+                <TextInput
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder="Search by name/email/phone/reference"
+                  placeholderTextColor="#94a3b8"
+                  style={styles.input}
+                  autoCapitalize="none"
+                />
+                <Pressable style={styles.button} onPress={() => void runManualSearch()}>
+                  <Text style={styles.buttonText}>{isSearching ? 'Searching...' : 'Search attendees'}</Text>
+                </Pressable>
+                {searchResults.length === 0 ? (
+                  <Text style={styles.meta}>No results yet.</Text>
+                ) : (
+                  <ScrollView style={styles.historyScroll} contentContainerStyle={styles.historyList}>
+                    {searchResults.map(item => (
+                      <View key={item.id} style={styles.historyItem}>
+                        <Text style={styles.historyStatus}>{item.fullName}</Text>
+                        <Text style={styles.meta}>{item.email}</Text>
+                        <Text style={styles.meta}>Ref: {item.referenceCode}</Text>
+                        <Text style={styles.meta}>Category: {item.category}</Text>
+                        <Text style={styles.meta}>Event: {item.event.name}</Text>
+                        <Text style={styles.meta}>Approval: {item.lifecycleStatus}</Text>
+                        <Text style={styles.meta}>
+                          Check-in: {item.checkin.status === 'ALREADY_CHECKED_IN' ? 'Already checked in' : 'Not checked in'}
+                        </Text>
+                      </View>
+                    ))}
+                  </ScrollView>
+                )}
+              </View>
+            ) : null}
 
             {screen === 'HISTORY' ? (
               <View style={styles.sectionStack}>
@@ -1392,8 +1559,17 @@ export default function App() {
               </View>
             ) : null}
 
-            {screen === 'TELEMETRY' ? (
+            {screen === 'SETTINGS' ? (
               <View style={styles.sectionStack}>
+                <Text style={styles.label}>Settings & Diagnostics</Text>
+                <Text style={styles.meta}>Queue: {queuedCheckinCount} (deferred {deferredCheckinCount})</Text>
+                <Text style={styles.meta}>Last sync: {syncHealth.lastResult}</Text>
+                <Pressable style={styles.buttonSecondary} onPress={() => void clearScanHistory()}>
+                  <Text style={styles.buttonTextInverse}>Clear local scan history</Text>
+                </Pressable>
+                <Pressable style={styles.buttonSecondary} onPress={() => void clearOfflineQueue()}>
+                  <Text style={styles.buttonTextInverse}>Clear offline queue</Text>
+                </Pressable>
                 <Text style={styles.label}>Telemetry</Text>
                 <Text style={styles.meta}>Stored events: {telemetryCount}</Text>
                 <Text style={styles.meta}>Latest: {lastTelemetryMessage || 'No telemetry yet.'}</Text>

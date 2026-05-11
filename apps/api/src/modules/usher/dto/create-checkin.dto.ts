@@ -14,8 +14,13 @@ export class CreateCheckinDto {
   deviceId!: string;
 
   @IsOptional()
-  @IsIn(['MOBILE_ONLINE', 'OFFLINE_SYNC'])
-  source?: 'MOBILE_ONLINE' | 'OFFLINE_SYNC';
+  @IsIn(['MOBILE_ONLINE', 'OFFLINE_SYNC', 'MOBILE_OFFLINE'])
+  source?: 'MOBILE_ONLINE' | 'OFFLINE_SYNC' | 'MOBILE_OFFLINE';
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  selectedEventId?: string;
 
   @IsOptional()
   @IsString()
