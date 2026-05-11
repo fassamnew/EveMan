@@ -14,6 +14,19 @@ type EventItem = {
   createdAt: string;
 };
 
+type EventTemplate = {
+  id: string;
+  name: string;
+  eventDraft: {
+    name: string;
+    description?: string;
+    startsAt?: string;
+    endsAt?: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+};
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -45,7 +58,12 @@ export default function OrgEventsPage() {
   const orgCode = typeof params.orgCode === 'string' ? params.orgCode : '';
 
   const [events, setEvents] = useState<EventItem[]>([]);
+  const [templates, setTemplates] = useState<EventTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [templateName, setTemplateName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isApplyingTemplate, setIsApplyingTemplate] = useState(false);
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
 
   // Create form state
@@ -86,7 +104,34 @@ export default function OrgEventsPage() {
     }
   }, [orgCode, router, onSessionExpired]);
 
-  useEffect(() => { if (orgCode) void fetchEvents(); }, [orgCode, fetchEvents]);
+  const fetchTemplates = useCallback(async () => {
+    const session = loadSession();
+    if (!session) {
+      router.replace(`/o/${orgCode}`);
+      return;
+    }
+
+    try {
+      const res = await authFetch(`${API_BASE}/org/${orgCode}/event-templates`, {}, onSessionExpired);
+      if (!res.ok) {
+        return;
+      }
+
+      const payload = (await res.json()) as EventTemplate[];
+      setTemplates(payload);
+      if (!selectedTemplateId && payload.length > 0) {
+        setSelectedTemplateId(payload[0].id);
+      }
+    } catch {
+      // Non-fatal.
+    }
+  }, [orgCode, onSessionExpired, router, selectedTemplateId]);
+
+  useEffect(() => {
+    if (!orgCode) return;
+    void fetchEvents();
+    void fetchTemplates();
+  }, [orgCode, fetchEvents, fetchTemplates]);
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
@@ -177,6 +222,104 @@ export default function OrgEventsPage() {
     }
   }
 
+  async function onSaveTemplateFromDraft() {
+    if (!templateName.trim()) {
+      setPageError('Template name is required');
+      return;
+    }
+
+    if (!createName.trim()) {
+      setPageError('Fill event name in draft form before saving template');
+      return;
+    }
+
+    setIsSavingTemplate(true);
+    setPageError(null);
+    try {
+      const res = await authFetch(
+        `${API_BASE}/org/${orgCode}/event-templates`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            name: templateName.trim(),
+            eventName: createName.trim()
+          })
+        },
+        onSessionExpired
+      );
+
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => ({}))) as { message?: string | string[] };
+        setPageError(Array.isArray(payload.message) ? payload.message.join(', ') : payload.message || 'Failed to save template');
+        return;
+      }
+
+      setTemplateName('');
+      await fetchTemplates();
+    } catch {
+      setPageError('Network error while saving template');
+    } finally {
+      setIsSavingTemplate(false);
+    }
+  }
+
+  async function onApplyTemplate() {
+    if (!selectedTemplateId) {
+      setPageError('Select a template first');
+      return;
+    }
+
+    setIsApplyingTemplate(true);
+    setPageError(null);
+    try {
+      const res = await authFetch(
+        `${API_BASE}/org/${orgCode}/event-templates/${selectedTemplateId}/apply`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({})
+        },
+        onSessionExpired
+      );
+
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => ({}))) as { message?: string | string[] };
+        setPageError(Array.isArray(payload.message) ? payload.message.join(', ') : payload.message || 'Failed to apply template');
+        return;
+      }
+
+      await fetchEvents();
+    } catch {
+      setPageError('Network error while applying template');
+    } finally {
+      setIsApplyingTemplate(false);
+    }
+  }
+
+  async function onDeleteTemplate(templateId: string) {
+    try {
+      const res = await authFetch(
+        `${API_BASE}/org/${orgCode}/event-templates/${templateId}`,
+        { method: 'DELETE' },
+        onSessionExpired
+      );
+
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => ({}))) as { message?: string | string[] };
+        setPageError(Array.isArray(payload.message) ? payload.message.join(', ') : payload.message || 'Failed to delete template');
+        return;
+      }
+
+      if (selectedTemplateId === templateId) {
+        setSelectedTemplateId('');
+      }
+      await fetchTemplates();
+    } catch {
+      setPageError('Network error while deleting template');
+    }
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-8 text-slate-100">
       <div className="mx-auto max-w-5xl">
@@ -204,6 +347,55 @@ export default function OrgEventsPage() {
         {pageError && (
           <p className="mb-4 rounded-lg border border-rose-500/40 bg-rose-950/40 px-4 py-3 text-sm text-rose-300">{pageError}</p>
         )}
+
+        <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-base font-semibold text-cyan-200">Event Templates</h2>
+            <span className="text-xs text-slate-400">{templates.length} template{templates.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+            <select
+              value={selectedTemplateId}
+              onChange={event => setSelectedTemplateId(event.target.value)}
+              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+            >
+              <option value="">Select template</option>
+              {templates.map(template => (
+                <option key={template.id} value={template.id}>
+                  {template.name} · {template.eventDraft.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => void onApplyTemplate()}
+              disabled={isApplyingTemplate || !selectedTemplateId}
+              className="rounded-lg border border-cyan-500 px-4 py-2 text-sm font-semibold text-cyan-200 disabled:opacity-60"
+            >
+              {isApplyingTemplate ? 'Applying…' : 'Apply template'}
+            </button>
+          </div>
+
+          {templates.length > 0 ? (
+            <ul className="mt-3 space-y-2">
+              {templates.map(template => (
+                <li key={template.id} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-xs">
+                  <div>
+                    <p className="font-medium text-slate-200">{template.name}</p>
+                    <p className="text-slate-400">Draft: {template.eventDraft.name}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void onDeleteTemplate(template.id)}
+                    className="rounded-md border border-rose-500/50 px-2.5 py-1 text-rose-200"
+                  >
+                    Delete
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
 
         {/* Create form */}
         {showCreate && (
@@ -250,6 +442,22 @@ export default function OrgEventsPage() {
               </label>
             </div>
             {createError && <p className="mt-3 text-sm text-rose-300">{createError}</p>}
+            <div className="mt-3 grid gap-2 md:grid-cols-[1fr_auto]">
+              <input
+                value={templateName}
+                onChange={event => setTemplateName(event.target.value)}
+                placeholder="Template name to save this draft"
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-300 focus:ring"
+              />
+              <button
+                type="button"
+                onClick={() => void onSaveTemplateFromDraft()}
+                disabled={isSavingTemplate}
+                className="rounded-lg border border-indigo-500 px-4 py-2 text-sm font-semibold text-indigo-200 disabled:opacity-60"
+              >
+                {isSavingTemplate ? 'Saving template…' : 'Save as template'}
+              </button>
+            </div>
             <div className="mt-4 flex gap-2">
               <button
                 type="submit"

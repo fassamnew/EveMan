@@ -35,6 +35,7 @@ describe.skipIf(!runIntegration)('Auth integration (MySQL)', () => {
   }
 
   async function clearIdentityData(): Promise<void> {
+    await prisma.migrationMetadata.deleteMany();
     await prisma.auditLog.deleteMany();
     await prisma.invite.deleteMany();
     await prisma.refreshToken.deleteMany();
@@ -242,5 +243,109 @@ describe.skipIf(!runIntegration)('Auth integration (MySQL)', () => {
 
     expect(userLogin.status).toBe(201);
     expect(userLogin.body.user.email).toBe('invitee@rocket.com');
+  });
+
+  it('supports bulk user invites via CSV for org admin', async () => {
+    const org = await prisma.organization.create({
+      data: { name: 'Bulk Org', code: 'bulk' }
+    });
+
+    await createOrgAdminUser({
+      email: 'admin@bulk.com',
+      password: 'StrongPass123!',
+      orgId: org.id
+    });
+
+    const adminLogin = await request(app.getHttpServer()).post('/auth/login').send({
+      email: 'admin@bulk.com',
+      password: 'StrongPass123!',
+      orgCode: 'bulk'
+    });
+
+    expect(adminLogin.status).toBe(201);
+
+    const bulkRes = await request(app.getHttpServer())
+      .post(`/org/${org.code}/users/invite/bulk`)
+      .set('Authorization', `Bearer ${adminLogin.body.accessToken}`)
+      .send({
+        csvContent: 'email,roleName\nuser1@bulk.com,ORG_STAFF\nuser2@bulk.com,ORG_ADMIN'
+      });
+
+    expect(bulkRes.status).toBe(201);
+    expect(bulkRes.body.totals.attempted).toBe(2);
+    expect(bulkRes.body.totals.successful).toBe(2);
+    expect(bulkRes.body.totals.failed).toBe(0);
+    expect(Array.isArray(bulkRes.body.results)).toBe(true);
+    expect(bulkRes.body.results).toHaveLength(2);
+  });
+
+  it('supports webhook settings CRUD for org admins', async () => {
+    const org = await prisma.organization.create({
+      data: { name: 'Hook Org', code: 'hook' }
+    });
+
+    await createOrgAdminUser({
+      email: 'admin@hook.com',
+      password: 'StrongPass123!',
+      orgId: org.id
+    });
+
+    const adminLogin = await request(app.getHttpServer()).post('/auth/login').send({
+      email: 'admin@hook.com',
+      password: 'StrongPass123!',
+      orgCode: 'hook'
+    });
+
+    expect(adminLogin.status).toBe(201);
+
+    const createRes = await request(app.getHttpServer())
+      .post(`/org/${org.code}/settings/webhooks`)
+      .set('Authorization', `Bearer ${adminLogin.body.accessToken}`)
+      .send({
+        targetUrl: 'http://localhost:39999/incoming',
+        events: ['REGISTRATION_CONFIRMED'],
+        isActive: true,
+        secret: 'webhook-secret'
+      });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.hasSecret).toBe(true);
+
+    const listRes = await request(app.getHttpServer())
+      .get(`/org/${org.code}/settings/webhooks`)
+      .set('Authorization', `Bearer ${adminLogin.body.accessToken}`);
+
+    expect(listRes.status).toBe(200);
+    expect(Array.isArray(listRes.body)).toBe(true);
+    expect(listRes.body).toHaveLength(1);
+    expect(listRes.body[0].targetUrl).toBe('http://localhost:39999/incoming');
+
+    const updateRes = await request(app.getHttpServer())
+      .patch(`/org/${org.code}/settings/webhooks/${createRes.body.id}`)
+      .set('Authorization', `Bearer ${adminLogin.body.accessToken}`)
+      .send({
+        targetUrl: 'http://localhost:39999/new-target',
+        events: ['REGISTRATION_PENDING', 'REGISTRATION_REJECTED'],
+        isActive: false,
+        secret: ''
+      });
+
+    expect(updateRes.status).toBe(200);
+    expect(updateRes.body.targetUrl).toBe('http://localhost:39999/new-target');
+    expect(updateRes.body.isActive).toBe(false);
+    expect(updateRes.body.hasSecret).toBe(false);
+
+    const deleteRes = await request(app.getHttpServer())
+      .delete(`/org/${org.code}/settings/webhooks/${createRes.body.id}`)
+      .set('Authorization', `Bearer ${adminLogin.body.accessToken}`);
+
+    expect(deleteRes.status).toBe(200);
+
+    const emptyList = await request(app.getHttpServer())
+      .get(`/org/${org.code}/settings/webhooks`)
+      .set('Authorization', `Bearer ${adminLogin.body.accessToken}`);
+
+    expect(emptyList.status).toBe(200);
+    expect(emptyList.body).toHaveLength(0);
   });
 });

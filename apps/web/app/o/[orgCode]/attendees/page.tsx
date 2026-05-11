@@ -29,6 +29,31 @@ type AttendeeListResponse = {
   };
 };
 
+type AttendeeCommunicationItem = {
+  id: string;
+  channel: 'EMAIL' | 'SMS';
+  status: 'QUEUED' | 'SENT' | 'FAILED';
+  recipientAddress: string;
+  errorMessage: string | null;
+  createdAt: string;
+  sentAt: string | null;
+  template: {
+    id: string;
+    name: string;
+    channel: 'EMAIL' | 'SMS';
+  } | null;
+};
+
+type AttendeeCommunicationResponse = {
+  items: AttendeeCommunicationItem[];
+  pagination: {
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  };
+};
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
 
 export default function AttendeesPage() {
@@ -46,6 +71,10 @@ export default function AttendeesPage() {
     totalPages: 1
   });
   const [editById, setEditById] = useState<Record<string, { fullName: string; email: string }>>({});
+  const [openHistoryById, setOpenHistoryById] = useState<Record<string, boolean>>({});
+  const [historyById, setHistoryById] = useState<Record<string, AttendeeCommunicationItem[]>>({});
+  const [historyLoadingById, setHistoryLoadingById] = useState<Record<string, boolean>>({});
+  const [historyFilterById, setHistoryFilterById] = useState<Record<string, 'ALL' | 'QUEUED' | 'SENT' | 'FAILED'>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -176,6 +205,55 @@ export default function AttendeesPage() {
     await fetchAttendees(1);
   }
 
+  async function loadCommunicationHistory(attendeeId: string, statusFilter: 'ALL' | 'QUEUED' | 'SENT' | 'FAILED') {
+    const token = getSessionToken();
+    if (!token) {
+      return;
+    }
+
+    setHistoryLoadingById(current => ({ ...current, [attendeeId]: true }));
+
+    const query = new URLSearchParams();
+    query.set('page', '1');
+    query.set('pageSize', '20');
+    if (statusFilter !== 'ALL') {
+      query.set('status', statusFilter);
+    }
+
+    try {
+      const response = await fetch(
+        `${API_BASE}/org/${orgCode}/attendees/${attendeeId}/communications?${query.toString()}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { message?: string };
+        setError(payload.message || 'Failed to load communication history');
+        return;
+      }
+
+      const payload = (await response.json()) as AttendeeCommunicationResponse;
+      setHistoryById(current => ({ ...current, [attendeeId]: payload.items }));
+    } catch {
+      setError('Unable to load communication history');
+    } finally {
+      setHistoryLoadingById(current => ({ ...current, [attendeeId]: false }));
+    }
+  }
+
+  async function toggleHistory(attendeeId: string) {
+    const nextOpen = !openHistoryById[attendeeId];
+    setOpenHistoryById(current => ({ ...current, [attendeeId]: nextOpen }));
+    if (nextOpen) {
+      const currentFilter = historyFilterById[attendeeId] || 'ALL';
+      await loadCommunicationHistory(attendeeId, currentFilter);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100">
       <div className="mx-auto max-w-7xl">
@@ -285,10 +363,62 @@ export default function AttendeesPage() {
                     >
                       Resend badge
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => void toggleHistory(item.id)}
+                      className="rounded-md border border-indigo-500 px-3 py-1 text-indigo-200"
+                    >
+                      {openHistoryById[item.id] ? 'Hide history' : 'View history'}
+                    </button>
                   </div>
                   <p className="mt-2 text-xs text-slate-500">
                     Latest badge: {item.latestBadge ? `${item.latestBadge.id} (${item.latestBadge.status})` : 'none'}
                   </p>
+
+                  {openHistoryById[item.id] ? (
+                    <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-300">
+                          Communication history
+                        </p>
+                        <select
+                          value={historyFilterById[item.id] || 'ALL'}
+                          onChange={event => {
+                            const next = event.target.value as 'ALL' | 'QUEUED' | 'SENT' | 'FAILED';
+                            setHistoryFilterById(current => ({ ...current, [item.id]: next }));
+                            void loadCommunicationHistory(item.id, next);
+                          }}
+                          className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
+                        >
+                          <option value="ALL">All statuses</option>
+                          <option value="QUEUED">QUEUED</option>
+                          <option value="SENT">SENT</option>
+                          <option value="FAILED">FAILED</option>
+                        </select>
+                      </div>
+
+                      {historyLoadingById[item.id] ? (
+                        <p className="text-xs text-slate-400">Loading history...</p>
+                      ) : (historyById[item.id] || []).length === 0 ? (
+                        <p className="text-xs text-slate-400">No communication logs found.</p>
+                      ) : (
+                        <ul className="space-y-2">
+                          {(historyById[item.id] || []).map(log => (
+                            <li key={log.id} className="rounded border border-slate-800 bg-slate-900/60 p-2 text-xs">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-medium text-slate-200">{log.channel}</span>
+                                <span className="text-slate-300">{log.status}</span>
+                                <span className="text-slate-500">{new Date(log.createdAt).toLocaleString()}</span>
+                              </div>
+                              <p className="mt-1 text-slate-300">Recipient: {log.recipientAddress}</p>
+                              {log.template ? <p className="text-slate-400">Template: {log.template.name}</p> : null}
+                              {log.errorMessage ? <p className="text-rose-300">Error: {log.errorMessage}</p> : null}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ) : null}
                 </li>
               ))}
             </ul>

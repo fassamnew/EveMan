@@ -1,7 +1,8 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditOutcome } from '@prisma/client';
 import { promises as fs } from 'node:fs';
-import path from 'node:path';
+import * as path from 'node:path';
+import { spawn } from 'node:child_process';
 import { PrismaService } from '../../infra/db/prisma.service';
 import { AuditService } from '../common/audit.service';
 import type { RequestWithAuth } from '../common/request-with-auth';
@@ -44,6 +45,27 @@ export class SuperAdminService {
       update: { value: JSON.stringify(value) },
       create: { key, value: JSON.stringify(value) }
     });
+  }
+
+  private getWorkspaceRootCandidates(): string[] {
+    return [
+      process.cwd(),
+      path.resolve(process.cwd(), '..'),
+      path.resolve(process.cwd(), '../..')
+    ];
+  }
+
+  private async resolvePhase8Script(scriptName: string): Promise<{ scriptPath: string; workspaceRoot: string } | null> {
+    for (const workspaceRoot of this.getWorkspaceRootCandidates()) {
+      const scriptPath = path.resolve(workspaceRoot, 'scripts/phase8', scriptName);
+      try {
+        await fs.access(scriptPath);
+        return { scriptPath, workspaceRoot };
+      } catch {
+        // Try next candidate.
+      }
+    }
+    return null;
   }
 
   async getPlatformOverview() {
@@ -258,6 +280,44 @@ export class SuperAdminService {
     return {
       directory: null,
       reports: []
+    };
+  }
+
+  async triggerBackupRestoreDrill(req: RequestWithAuth) {
+    const resolved = await this.resolvePhase8Script('backup_restore_drill.sh');
+    if (!resolved) {
+      throw new NotFoundException('backup_restore_drill.sh not found in scripts/phase8');
+    }
+
+    const child = spawn('bash', [resolved.scriptPath], {
+      cwd: resolved.workspaceRoot,
+      detached: true,
+      stdio: 'ignore',
+      shell: false
+    });
+
+    child.unref();
+
+    await this.audit.write({
+      actorUserId: req.auth?.userId || null,
+      organizationId: null,
+      action: 'OPS_BACKUP_RESTORE_DRILL_TRIGGERED',
+      targetType: 'OPERATION',
+      targetId: null,
+      outcome: AuditOutcome.SUCCESS,
+      ipAddress: this.getClientIp(req),
+      metadataJson: {
+        scriptPath: resolved.scriptPath,
+        pid: child.pid ?? null
+      }
+    });
+
+    return {
+      accepted: true,
+      action: 'backup_restore_drill',
+      pid: child.pid ?? -1,
+      scriptPath: resolved.scriptPath,
+      startedAt: new Date().toISOString()
     };
   }
 }

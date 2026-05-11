@@ -402,4 +402,84 @@ describe.skipIf(!runIntegration)('Attendees integration (MySQL)', () => {
     expect(approveRes.status).toBe(201);
     expect(approveRes.body.lifecycleStatus).toBe('APPROVED');
   });
+
+  it('returns attendee communication history with filters', async () => {
+    const org = await prisma.organization.create({ data: { name: 'Comms Org', code: 'commsorg' } });
+
+    await createOrgUser({
+      email: 'admin@commsorg.com',
+      password: 'StrongPass123!',
+      orgId: org.id,
+      roleName: 'ORG_ADMIN'
+    });
+
+    const auth = await loginOrgUser({
+      email: 'admin@commsorg.com',
+      password: 'StrongPass123!',
+      orgId: org.id
+    });
+
+    const event = await prisma.event.create({
+      data: {
+        organizationId: org.id,
+        name: 'Comms Event',
+        status: 'PUBLISHED'
+      }
+    });
+
+    const link = await prisma.registrationLink.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        slug: 'comms-event',
+        title: 'Comms Registration'
+      }
+    });
+
+    const registrant = await prisma.registrant.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        registrationLinkId: link.id,
+        referenceCode: 'COMMS001',
+        email: 'person@comms.com',
+        fullName: 'Comms Person',
+        lifecycleStatus: 'APPROVED',
+        consentAccepted: true,
+        consentPolicyVersion: 'v1',
+        consentCapturedAt: new Date()
+      }
+    });
+
+    await prisma.communicationLog.createMany({
+      data: [
+        {
+          organizationId: org.id,
+          registrantId: registrant.id,
+          channel: 'EMAIL',
+          status: 'SENT',
+          recipientAddress: registrant.email
+        },
+        {
+          organizationId: org.id,
+          registrantId: registrant.id,
+          channel: 'EMAIL',
+          status: 'FAILED',
+          recipientAddress: registrant.email,
+          errorMessage: 'smtp issue'
+        }
+      ]
+    });
+
+    const response = await request(app.getHttpServer())
+      .get(`/org/${org.code}/attendees/${registrant.id}/communications`)
+      .query({ status: 'FAILED', page: 1, pageSize: 10 })
+      .set('Authorization', `Bearer ${auth.accessToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.attendee.id).toBe(registrant.id);
+    expect(response.body.items).toHaveLength(1);
+    expect(response.body.items[0].status).toBe('FAILED');
+    expect(response.body.pagination.total).toBe(1);
+  });
 });

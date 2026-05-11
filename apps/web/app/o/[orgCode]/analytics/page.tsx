@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { loadSession } from '../../../../lib/session';
 
+const LIVE_REFRESH_INTERVAL_MS = 10_000;
+
 type DashboardResponse = {
   organization: {
     id: string;
@@ -90,7 +92,16 @@ export default function AnalyticsPage() {
     'registrations'
   );
   const [isLoading, setIsLoading] = useState(false);
+  const [isLiveRefreshing, setIsLiveRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [liveModeEnabled, setLiveModeEnabled] = useState(true);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+  const [kpiDeltas, setKpiDeltas] = useState<{
+    totalRegistrants: number;
+    totalCheckins: number;
+    communicationSent: number;
+    communicationFailed: number;
+  } | null>(null);
   const [reportFormat, setReportFormat] = useState<'csv' | 'json'>('csv');
   const [reportEventId, setReportEventId] = useState<string>('');
   const [reports, setReports] = useState<ReportItem[]>([]);
@@ -115,14 +126,18 @@ export default function AnalyticsPage() {
     return session.accessToken;
   }
 
-  async function loadDashboard(): Promise<void> {
+  async function loadDashboard(options?: { silent?: boolean }): Promise<void> {
     const token = getSessionToken();
     if (!token) {
       return;
     }
 
-    setIsLoading(true);
-    setError(null);
+    if (options?.silent) {
+      setIsLiveRefreshing(true);
+    } else {
+      setIsLoading(true);
+      setError(null);
+    }
 
     try {
       const response = await fetch(`${API_BASE}/org/${orgCode}/dashboard/overview`, {
@@ -138,11 +153,26 @@ export default function AnalyticsPage() {
       }
 
       const payload = (await response.json()) as DashboardResponse;
+      setKpiDeltas(
+        data
+          ? {
+              totalRegistrants: payload.kpis.totalRegistrants - data.kpis.totalRegistrants,
+              totalCheckins: payload.kpis.totalCheckins - data.kpis.totalCheckins,
+              communicationSent: payload.kpis.communicationSent - data.kpis.communicationSent,
+              communicationFailed: payload.kpis.communicationFailed - data.kpis.communicationFailed
+            }
+          : null
+      );
       setData(payload);
+      setLastUpdatedAt(new Date().toISOString());
     } catch {
       setError('Network error while loading dashboard');
     } finally {
-      setIsLoading(false);
+      if (options?.silent) {
+        setIsLiveRefreshing(false);
+      } else {
+        setIsLoading(false);
+      }
     }
   }
 
@@ -288,6 +318,18 @@ export default function AnalyticsPage() {
   }, [orgCode, hasExportRole]);
 
   useEffect(() => {
+    if (!orgCode || !liveModeEnabled) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void loadDashboard({ silent: true });
+    }, LIVE_REFRESH_INTERVAL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [orgCode, liveModeEnabled, data]);
+
+  useEffect(() => {
     if (!orgCode || !hasExportRole) {
       return;
     }
@@ -384,7 +426,18 @@ export default function AnalyticsPage() {
       <div className="mx-auto max-w-7xl">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-3xl font-semibold tracking-tight">Analytics Dashboard</h1>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setLiveModeEnabled(value => !value)}
+              className={`rounded-lg border px-3 py-1 text-sm ${
+                liveModeEnabled
+                  ? 'border-emerald-500 text-emerald-200'
+                  : 'border-slate-700 text-slate-300'
+              }`}
+            >
+              {liveModeEnabled ? 'Live mode: on' : 'Live mode: off'}
+            </button>
             <button
               type="button"
               onClick={() => void loadDashboard()}
@@ -407,17 +460,40 @@ export default function AnalyticsPage() {
 
         {data ? (
           <>
-            <p className="mb-4 text-xs text-slate-400">
-              Generated: {new Date(data.generatedAt).toLocaleString()} · Cached: {data.cached ? 'yes' : 'no'}
+            <p className="mb-4 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+              <span>Generated: {new Date(data.generatedAt).toLocaleString()}</span>
+              <span>Cached: {data.cached ? 'yes' : 'no'}</span>
+              <span>
+                Last updated: {lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleTimeString() : 'just now'}
+              </span>
+              {liveModeEnabled ? (
+                <span className="inline-flex items-center gap-1 text-emerald-300">
+                  <span className={`h-2 w-2 rounded-full ${isLiveRefreshing ? 'animate-pulse bg-emerald-300' : 'bg-emerald-500'}`} />
+                  Live every {Math.floor(LIVE_REFRESH_INTERVAL_MS / 1000)}s
+                </span>
+              ) : null}
             </p>
 
             <section className="mb-6 grid gap-3 md:grid-cols-4">
-              <KpiCard label="Events" value={`${data.kpis.publishedEvents}/${data.kpis.totalEvents}`} />
-              <KpiCard label="Registrants" value={`${data.kpis.totalRegistrants}`} />
-              <KpiCard label="Check-ins" value={`${data.kpis.totalCheckins} (${data.kpis.checkinRate}%)`} />
+              <KpiCard label="Events" value={`${data.kpis.publishedEvents}/${data.kpis.totalEvents}`} delta={null} />
+              <KpiCard
+                label="Registrants"
+                value={`${data.kpis.totalRegistrants}`}
+                delta={kpiDeltas?.totalRegistrants ?? null}
+              />
+              <KpiCard
+                label="Check-ins"
+                value={`${data.kpis.totalCheckins} (${data.kpis.checkinRate}%)`}
+                delta={kpiDeltas?.totalCheckins ?? null}
+              />
               <KpiCard
                 label="Communications"
                 value={`${data.kpis.communicationSent} sent / ${data.kpis.communicationFailed} failed`}
+                delta={
+                  kpiDeltas
+                    ? kpiDeltas.communicationSent + kpiDeltas.communicationFailed
+                    : null
+                }
               />
             </section>
 
@@ -651,11 +727,21 @@ export default function AnalyticsPage() {
   );
 }
 
-function KpiCard(props: { label: string; value: string }) {
+function KpiCard(props: { label: string; value: string; delta: number | null }) {
+  const showDelta = props.delta !== null && props.delta !== 0;
+  const deltaLabel = props.delta && props.delta > 0 ? `+${props.delta}` : `${props.delta}`;
+
   return (
     <article className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
       <p className="text-xs uppercase tracking-wide text-slate-400">{props.label}</p>
       <p className="mt-2 text-xl font-semibold text-slate-100">{props.value}</p>
+      {showDelta ? (
+        <p className={`mt-1 text-xs ${props.delta && props.delta > 0 ? 'text-emerald-300' : 'text-amber-300'}`}>
+          {deltaLabel} since last refresh
+        </p>
+      ) : (
+        <p className="mt-1 text-xs text-slate-500">No change</p>
+      )}
     </article>
   );
 }

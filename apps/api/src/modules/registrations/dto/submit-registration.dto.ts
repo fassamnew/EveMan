@@ -6,6 +6,7 @@ import {
   IsDefined,
   IsEmail,
   IsNotEmpty,
+  IsOptional,
   IsString,
   MaxLength,
   ValidateNested
@@ -43,6 +44,21 @@ export class SubmitRegistrationDto {
   @IsNotEmpty()
   @MaxLength(512)
   captchaToken!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  accessPassword?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  inviteToken?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  photoUrl?: string;
 
   @IsArray()
   @ArrayMaxSize(100)

@@ -1,4 +1,4 @@
-import { IsArray, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsArray, IsISO8601, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class CreateBulkSendDto {
   @IsString()
@@ -9,4 +9,8 @@ export class CreateBulkSendDto {
   @IsArray()
   @IsString({ each: true })
   attendeeIds?: string[];
+
+  @IsOptional()
+  @IsISO8601()
+  sendAt?: string;
 }

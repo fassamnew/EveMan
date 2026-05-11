@@ -170,7 +170,7 @@ export class AuthService {
         assignment.organizationId === organizationId ||
         assignment.role.name === 'SUPER_ADMIN'
       ) {
-        roleSet.add(assignment.role.name);
+        roleSet.add(assignment.role.name as RoleName);
       }
     }
 
@@ -253,7 +253,7 @@ export class AuthService {
         }
         return item.organizationId === existing.organizationId || item.role.name === 'SUPER_ADMIN';
       })
-      .map(item => item.role.name);
+      .map(item => item.role.name as RoleName);
 
     const authContext = this.toAuthContext({
       userId: existing.user.id,

@@ -6,6 +6,7 @@ import type { RequestWithAuth } from '../common/request-with-auth';
 import { AttendeesService } from './attendees.service';
 import { ListAttendeesDto } from './dto/list-attendees.dto';
 import { UpdateAttendeeDto } from './dto/update-attendee.dto';
+import { ListAttendeeCommunicationsDto } from './dto/list-attendee-communications.dto';
 
 @Controller()
 export class AttendeesController {
@@ -19,6 +20,17 @@ export class AttendeesController {
     @Req() req: RequestWithAuth
   ) {
     return this.attendeesService.listAttendees({ orgCode, dto, req });
+  }
+
+  @UseGuards(AccessTokenGuard, OrgAccessGuard)
+  @Get('org/:orgCode/attendees/:registrantId/communications')
+  async listCommunications(
+    @Param('orgCode') orgCode: string,
+    @Param('registrantId') registrantId: string,
+    @Query() dto: ListAttendeeCommunicationsDto,
+    @Req() req: RequestWithAuth
+  ) {
+    return this.attendeesService.listAttendeeCommunications({ orgCode, registrantId, dto, req });
   }
 
   @UseGuards(AccessTokenGuard, OrgAccessGuard, ManagementRateLimitGuard)

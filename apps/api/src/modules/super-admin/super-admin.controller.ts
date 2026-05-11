@@ -2,10 +2,12 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Inject,
   Param,
   ParseIntPipe,
   Patch,
+  Post,
   Put,
   Query,
   Req,
@@ -105,5 +107,11 @@ export class SuperAdminController {
   @Get('operations/backup-restore')
   async listBackupRestoreArtifacts() {
     return this.superAdminService.listBackupRestoreArtifacts();
+  }
+
+  @Post('operations/backup-restore/drill')
+  @HttpCode(202)
+  async triggerBackupRestoreDrill(@Req() req: RequestWithAuth) {
+    return this.superAdminService.triggerBackupRestoreDrill(req);
   }
 }

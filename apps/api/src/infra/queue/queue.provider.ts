@@ -1,9 +1,15 @@
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
+import { createHmac } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 import { createBadgeSignedDownloadUrl, putBadgeArtifact } from '../storage/badge-storage.util';
 import { putReportArtifact } from '../storage/report-storage.util';
+import {
+  decodeWebhookConfig,
+  webhookKeyPrefix,
+  type WebhookEventType
+} from '../webhooks/webhook-config';
 import {
   getBadgeRenderAlertThreshold,
   getBadgeRenderMetricsSnapshot,
@@ -276,6 +282,96 @@ async function renderAnalyticsReportArtifact(input: {
   };
 }
 
+async function dispatchWebhookEvent(input: {
+  organizationId: string;
+  eventType: WebhookEventType;
+  payload: Record<string, unknown>;
+  occurredAt: string;
+}): Promise<void> {
+  const prisma = getWorkerPrisma();
+  const configs = await prisma.migrationMetadata.findMany({
+    where: {
+      key: {
+        startsWith: webhookKeyPrefix(input.organizationId)
+      }
+    }
+  });
+
+  for (const row of configs) {
+    const webhookId = row.key.replace(webhookKeyPrefix(input.organizationId), '');
+    const config = decodeWebhookConfig(row.value);
+    if (!config || !config.isActive || !config.events.includes(input.eventType)) {
+      continue;
+    }
+
+    const body = JSON.stringify({
+      eventType: input.eventType,
+      occurredAt: input.occurredAt,
+      data: input.payload
+    });
+
+    const headers: Record<string, string> = {
+      'content-type': 'application/json',
+      'x-evemange-event': input.eventType
+    };
+
+    if (config.secret) {
+      headers['x-evemange-signature'] = createHmac('sha256', config.secret).update(body).digest('hex');
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    try {
+      const response = await fetch(config.targetUrl, {
+        method: 'POST',
+        headers,
+        body,
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        throw new Error(`Webhook returned ${response.status}`);
+      }
+
+      await prisma.auditLog.create({
+        data: {
+          actorUserId: null,
+          organizationId: input.organizationId,
+          action: 'WEBHOOK_DELIVERY_SUCCESS',
+          targetType: 'WEBHOOK',
+          targetId: webhookId,
+          outcome: 'SUCCESS',
+          ipAddress: null,
+          metadataJson: {
+            eventType: input.eventType,
+            statusCode: response.status
+          }
+        }
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown webhook delivery error';
+      await prisma.auditLog.create({
+        data: {
+          actorUserId: null,
+          organizationId: input.organizationId,
+          action: 'WEBHOOK_DELIVERY_FAILURE',
+          targetType: 'WEBHOOK',
+          targetId: webhookId,
+          outcome: 'FAILURE',
+          ipAddress: null,
+          metadataJson: {
+            eventType: input.eventType,
+            reason: message
+          }
+        }
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
+
 function getRedisConnection(): IORedis {
   if (redisConnection) {
     return redisConnection;
@@ -325,16 +421,19 @@ export function startSystemWorker(): Worker {
       if (job.name === 'registration.confirmation-email') {
         const payload = job.data as {
           registrantId: string;
+          organizationId: string;
           referenceCode: string;
           email: string;
           fullName: string;
           eventName: string;
           linkTitle: string;
+          templateName: string;
+          confirmationMessage: string | null;
         };
 
         // Phase 3 worker baseline: in Phase 5 this is replaced with real email delivery.
         console.log(
-          `confirmation-email queued for ${payload.email} (${payload.referenceCode}) on ${payload.eventName}`
+          `confirmation-email queued for ${payload.email} (${payload.referenceCode}) on ${payload.eventName} using template ${payload.templateName}`
         );
         return;
       }
@@ -469,6 +568,18 @@ export function startSystemWorker(): Worker {
           }
         });
 
+        return;
+      }
+
+      if (job.name === 'webhook.dispatch') {
+        const payload = job.data as {
+          organizationId: string;
+          eventType: WebhookEventType;
+          payload: Record<string, unknown>;
+          occurredAt: string;
+        };
+
+        await dispatchWebhookEvent(payload);
         return;
       }
 

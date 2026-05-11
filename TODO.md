@@ -81,7 +81,7 @@ The items below are the "V1" legacy features which will be refactored into the n
 - [x] **Manage Global Badge Templates**: Global badge template catalog get/update endpoints.
 - [x] **Manage Global Registration Page Templates**: Global registration template catalog get/update endpoints.
 - [x] **Super Admin UI Completion**: Dashboard now exposes platform overview, events, system users, audit logs, backup visibility, and JSON editors for all section 3.1 settings/template endpoints.
-- [ ] **Operational Actions**: Add guarded API workflow for triggering backup/restore drill from portal.
+- [x] **Operational Actions**: Added guarded API workflow and Super Admin portal action for triggering backup/restore drill.
 - [x] **E2E Tests**: Added API integration coverage for all current super-admin section 3.1 routes in `apps/api/src/modules/super-admin/super-admin.integration.test.ts`.
 
 ### Section 3.2: Organizer Portal Features [IN PROGRESS]
@@ -101,19 +101,20 @@ The items below are the "V1" legacy features which will be refactored into the n
 
 #### Partially Implemented 🟡
 - [x] **Attendee Import**: CSV import support (missing XLSX format).
-- [ ] **Automated Bulk Communications**: Manual reminders only (no scheduling/automation).
+- [x] **Automated Bulk Communications**: Added scheduled bulk-send support with delayed queue dispatch and organizer scheduling UI.
 - [x] **Usher API**: Check-in endpoints exist but no organizer UI for usher management.
-- [x] **Analytics**: Basic metrics available (missing live dashboard and real-time updates).
+- [x] **Analytics**: Live dashboard with periodic auto-refresh and KPI deltas is now available.
 
 #### Missing 🔴
-- [ ] **Registration Form Builder**: Organizers cannot customize registration form fields per link (only JSON config at super-admin level).
+- [x] **Registration Form Builder**: Added organizer API and UI to configure per-link registration form fields.
 - [ ] **Registration Page Designer**: No UI for organizers to design registration page branding/layout (template-based only).
-- [ ] **Bulk User Invitations**: Cannot bulk-invite team members via CSV.
-- [ ] **Event Templates**: Cannot create reusable event templates.
-- [ ] **Advanced Approval Rules**: Complex conditional approvals based on registrant data.
-- [ ] **Live Analytics Dashboard**: Real-time attendee registration and check-in metrics.
-- [ ] **Attendee Communication History**: View communication logs per attendee.
-- [ ] **Webhook Integrations**: Send registration events to external systems.
+- [x] **Bulk User Invitations**: Added organizer bulk CSV invite endpoint and settings UI with per-row results.
+- [x] **Event Templates**: Organizer-scoped templates can be saved from draft values, listed, applied to create events, and deleted.
+- [x] **Advanced Approval Rules**: Added per-link conditional rules (approve/pending/reject) evaluated from registrant response data.
+- [x] **Registration Link Access Controls**: Enforced PUBLIC/PASSWORD_PROTECTED/INVITE_ONLY behavior in public resolve/schema/submit flows.
+- [x] **Live Analytics Dashboard**: Added organizer live mode with auto-refresh and KPI delta tracking for real-time registration/check-in metrics.
+- [x] **Attendee Communication History**: Added attendee-level communication history API and organizer UI timeline with status filters.
+- [x] **Webhook Integrations**: Send registration events to external systems.
 - [ ] **Mobile App for Organizers**: Mobile view for portable event management.
 - [ ] **Usher Portal UI**: Organizer-facing usher team and device management.
 

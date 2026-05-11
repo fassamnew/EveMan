@@ -191,15 +191,3 @@ export default function OrgDashboardPage() {
     </main>
   );
 }
-
-            className="group rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-left transition hover:border-cyan-500/50 hover:bg-slate-800/60"
-          >
-            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-slate-500/10 text-slate-300 text-xl">⚙</div>
-            <h2 className="font-semibold text-slate-100 group-hover:text-cyan-200">Settings</h2>
-            <p className="mt-1 text-sm text-slate-400">Configure link types, colors, and org-wide preferences.</p>
-          </button>
-        </div>
-      </div>
-    </main>
-  );
-}

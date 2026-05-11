@@ -42,6 +42,10 @@ enum FormFieldType {
   NUMBER
   SELECT
   CHECKBOX
+  DATE
+  RADIO_BUTTON
+  FILE_UPLOAD
+  PHOTO_UPLOAD
 }
 
 enum BadgeStatus {
@@ -348,6 +352,10 @@ model FormField {
   minValue           Float?
   maxValue           Float?
   pattern            String?
+  minDate            DateTime?
+  maxDate            DateTime?
+  allowedFileTypesJson Json?
+  maxFileSize        Int?
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
   registrationLink   RegistrationLink @relation(fields: [registrationLinkId], references: [id], onDelete: Cascade)

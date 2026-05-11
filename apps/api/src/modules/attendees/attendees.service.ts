@@ -15,6 +15,7 @@ import { PolicyService } from '../common/policy.service';
 import type { RequestWithAuth } from '../common/request-with-auth';
 import type { ListAttendeesDto } from './dto/list-attendees.dto';
 import type { UpdateAttendeeDto } from './dto/update-attendee.dto';
+import type { ListAttendeeCommunicationsDto } from './dto/list-attendee-communications.dto';
 
 @Injectable()
 export class AttendeesService {
@@ -145,6 +146,84 @@ export class AttendeesService {
         event: item.event,
         registrationLink: item.registrationLink,
         latestBadge: item.badges[0] || null
+      })),
+      pagination: {
+        total,
+        page,
+        pageSize,
+        totalPages: Math.max(1, Math.ceil(total / pageSize))
+      }
+    };
+  }
+
+  async listAttendeeCommunications(input: {
+    orgCode: string;
+    registrantId: string;
+    dto: ListAttendeeCommunicationsDto;
+    req: RequestWithAuth;
+  }) {
+    this.assertReadAccess(input.orgCode, input.req);
+    const org = await this.getOrg(input.orgCode);
+    const registrant = await this.getRegistrant(org.id, input.registrantId);
+
+    const page = Math.max(1, Number(input.dto.page || 1));
+    const pageSize = Math.min(100, Math.max(1, Number(input.dto.pageSize || 20)));
+    const skip = (page - 1) * pageSize;
+
+    const where = {
+      organizationId: org.id,
+      registrantId: registrant.id,
+      channel: input.dto.channel,
+      status: input.dto.status
+    };
+
+    const [total, logs] = await Promise.all([
+      this.prisma.communicationLog.count({ where }),
+      this.prisma.communicationLog.findMany({
+        where,
+        include: {
+          template: {
+            select: {
+              id: true,
+              name: true,
+              channel: true
+            }
+          },
+          senderUser: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true
+            }
+          }
+        },
+        orderBy: {
+          createdAt: 'desc'
+        },
+        skip,
+        take: pageSize
+      })
+    ]);
+
+    return {
+      attendee: {
+        id: registrant.id,
+        referenceCode: registrant.referenceCode,
+        fullName: registrant.fullName,
+        email: registrant.email
+      },
+      items: logs.map(log => ({
+        id: log.id,
+        channel: log.channel,
+        status: log.status,
+        recipientAddress: log.recipientAddress,
+        providerMessageId: log.providerMessageId,
+        errorMessage: log.errorMessage,
+        createdAt: log.createdAt,
+        sentAt: log.sentAt,
+        template: log.template,
+        sender: log.senderUser
       })),
       pagination: {
         total,

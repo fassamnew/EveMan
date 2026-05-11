@@ -352,5 +352,14 @@ describe.skipIf(!runIntegration)('Super Admin integration (MySQL)', () => {
 
     expect(backupArtifactsRes.status).toBe(200);
     expect(Array.isArray(backupArtifactsRes.body.reports)).toBe(true);
+
+    const triggerDrillRes = await request(app.getHttpServer())
+      .post('/super-admin/operations/backup-restore/drill')
+      .set('Authorization', `Bearer ${auth.accessToken}`);
+
+    expect(triggerDrillRes.status).toBe(202);
+    expect(triggerDrillRes.body.accepted).toBe(true);
+    expect(triggerDrillRes.body.action).toBe('backup_restore_drill');
+    expect(typeof triggerDrillRes.body.pid).toBe('number');
   });
 });

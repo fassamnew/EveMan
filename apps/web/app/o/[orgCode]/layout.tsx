@@ -4,7 +4,6 @@ import { useParams, useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { clearSession, loadSession } from '../../../lib/session';
 import { useTheme } from '../../../lib/theme-provider';
-import { Menu, X, Sun, Moon } from 'lucide-react';
 
 const navItems = [
   { label: 'Dashboard', href: '', icon: '📊' },
@@ -28,22 +27,51 @@ export default function OrgLayout({
   const { theme, toggleTheme } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [email, setEmail] = useState('');
+  const [authChecked, setAuthChecked] = useState(false);
   const [isAuthorized, setIsAuthorized] = useState(false);
 
   const orgCode = params.orgCode as string;
+  const isPublicOrgRoute =
+    pathname === `/o/${orgCode}/login` || pathname === `/o/${orgCode}/activate`;
 
   useEffect(() => {
+    if (isPublicOrgRoute) {
+      setAuthChecked(true);
+      setIsAuthorized(false);
+      return;
+    }
+
     const session = loadSession();
     if (!session || session.organizationCode !== orgCode) {
       router.replace(`/o/${orgCode}/login`);
+      setAuthChecked(true);
+      setIsAuthorized(false);
       return;
     }
+
     setEmail(session.email);
     setIsAuthorized(true);
-  }, [orgCode, router]);
+    setAuthChecked(true);
+  }, [isPublicOrgRoute, orgCode, router]);
+
+  if (isPublicOrgRoute) {
+    return <>{children}</>;
+  }
+
+  if (!authChecked) {
+    return (
+      <main className={`min-h-screen flex items-center justify-center ${theme === 'dark' ? 'bg-slate-950 text-slate-300' : 'bg-white text-slate-600'}`}>
+        <p className="text-sm">Loading organization portal...</p>
+      </main>
+    );
+  }
 
   if (!isAuthorized) {
-    return null;
+    return (
+      <main className={`min-h-screen flex items-center justify-center ${theme === 'dark' ? 'bg-slate-950 text-slate-300' : 'bg-white text-slate-600'}`}>
+        <p className="text-sm">Redirecting to sign in...</p>
+      </main>
+    );
   }
 
   const isActive = (href: string) => {
@@ -79,7 +107,7 @@ export default function OrgLayout({
                   : 'hover:bg-slate-100'
               }`}
             >
-              {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+              <span className="text-xl" aria-hidden="true">{sidebarOpen ? '✕' : '☰'}</span>
             </button>
             <div>
               <p
@@ -103,7 +131,7 @@ export default function OrgLayout({
               }`}
               title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
             >
-              {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+              <span className="text-lg" aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span>
             </button>
             <div className="hidden items-center gap-3 sm:flex">
               <span className={`text-sm ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>

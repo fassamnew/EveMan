@@ -49,6 +49,22 @@ Launch public registration experiences for each link with dynamic forms, confirm
 2. Validation tests for required and custom fields.
 3. Duplicate registration policy tests.
 
+## Section 4 Verification Checklist
+
+Run:
+1. `npm run typecheck -w @evemange/api`
+2. `npm run test -w @evemange/api -- src/modules/registrations/section4-compliance.integration.test.ts`
+
+Pass criteria:
+1. Event settings lifecycle passes: update + readback for venue, branding URLs, registration windows, and check-in policy.
+2. Link settings lifecycle passes: update + readback for confirmationMessage, emailTemplateName, photoUpload, accessMode, and accessPassword requirements.
+3. Access enforcement passes: protected link blocks unauthorized resolve and allows authorized resolve.
+4. Photo policy enforcement passes: REQUIRED blocks missing photo and accepts valid photo.
+5. Confirmation/template behavior passes:
+- Matching organization email template name resolves and is recorded.
+- Missing template falls back to `default-registration-confirmation` and is recorded.
+- confirmationMessage is returned in submit response and stored in submit metadata.
+
 ## Acceptance Criteria
 
 1. Public link shows correct event/link form.

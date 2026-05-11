@@ -12,6 +12,8 @@ import { CreateLinkTypeDto } from './dto/create-link-type.dto';
 import { UpdateLinkTypeDto } from './dto/update-link-type.dto';
 import { CreateCustomRoleDto } from './dto/create-custom-role.dto';
 import { UpdateCustomRoleDto } from './dto/update-custom-role.dto';
+import { BulkInviteUsersDto } from './dto/bulk-invite-users.dto';
+import { UpsertWebhookConfigDto } from './dto/upsert-webhook-config.dto';
 
 @Controller()
 export class OrganizationsController {
@@ -55,6 +57,16 @@ export class OrganizationsController {
     @Req() req: RequestWithAuth
   ) {
     return this.organizationsService.inviteUser(orgCode, dto, req);
+  }
+
+  @UseGuards(AccessTokenGuard, OrgAccessGuard)
+  @Post('org/:orgCode/users/invite/bulk')
+  async bulkInviteUsers(
+    @Param('orgCode') orgCode: string,
+    @Body() dto: BulkInviteUsersDto,
+    @Req() req: RequestWithAuth
+  ) {
+    return this.organizationsService.bulkInviteUsers(orgCode, dto, req);
   }
 
   @Post('org/:orgCode/users/activate')
@@ -103,6 +115,43 @@ export class OrganizationsController {
     @Req() req: RequestWithAuth
   ) {
     return this.organizationsService.deleteLinkType(orgCode, linkTypeId, req);
+  }
+
+  @UseGuards(AccessTokenGuard, OrgAccessGuard)
+  @Get('org/:orgCode/settings/webhooks')
+  async listWebhooks(@Param('orgCode') orgCode: string, @Req() req: RequestWithAuth) {
+    return this.organizationsService.listWebhooks(orgCode, req);
+  }
+
+  @UseGuards(AccessTokenGuard, OrgAccessGuard, ManagementRateLimitGuard)
+  @Post('org/:orgCode/settings/webhooks')
+  async createWebhook(
+    @Param('orgCode') orgCode: string,
+    @Body() dto: UpsertWebhookConfigDto,
+    @Req() req: RequestWithAuth
+  ) {
+    return this.organizationsService.createWebhook(orgCode, dto, req);
+  }
+
+  @UseGuards(AccessTokenGuard, OrgAccessGuard, ManagementRateLimitGuard)
+  @Patch('org/:orgCode/settings/webhooks/:webhookId')
+  async updateWebhook(
+    @Param('orgCode') orgCode: string,
+    @Param('webhookId') webhookId: string,
+    @Body() dto: UpsertWebhookConfigDto,
+    @Req() req: RequestWithAuth
+  ) {
+    return this.organizationsService.updateWebhook(orgCode, webhookId, dto, req);
+  }
+
+  @UseGuards(AccessTokenGuard, OrgAccessGuard, ManagementRateLimitGuard)
+  @Delete('org/:orgCode/settings/webhooks/:webhookId')
+  async deleteWebhook(
+    @Param('orgCode') orgCode: string,
+    @Param('webhookId') webhookId: string,
+    @Req() req: RequestWithAuth
+  ) {
+    return this.organizationsService.deleteWebhook(orgCode, webhookId, req);
   }
 
   // ── Custom Roles ────────────────────────────────────────────────────────────

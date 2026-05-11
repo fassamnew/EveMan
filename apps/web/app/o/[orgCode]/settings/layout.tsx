@@ -17,6 +17,7 @@ export default function SettingsLayout({
   const navItems = [
     { label: 'Link Types', href: `/o/${orgCode}/settings` },
     { label: 'Custom Roles', href: `/o/${orgCode}/settings/roles` },
+    { label: 'Bulk Invitations', href: `/o/${orgCode}/settings/invitations` },
   ];
 
   return (
@@ -32,7 +33,8 @@ export default function SettingsLayout({
         {navItems.map((item) => {
           const isActive =
             pathname === item.href ||
-            (pathname.includes('/settings/roles') && item.href.includes('/roles'));
+            (pathname.includes('/settings/roles') && item.href.includes('/roles')) ||
+            (pathname.includes('/settings/invitations') && item.href.includes('/invitations'));
           return (
             <Link
               key={item.href}

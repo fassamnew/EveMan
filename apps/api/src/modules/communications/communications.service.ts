@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -152,6 +153,17 @@ export class CommunicationsService {
     this.assertWriteAccess(input.orgCode, input.req);
     const org = await this.getOrg(input.orgCode);
 
+    const scheduledAt = input.dto.sendAt ? new Date(input.dto.sendAt) : null;
+    if (scheduledAt && Number.isNaN(scheduledAt.getTime())) {
+      throw new BadRequestException('Invalid sendAt datetime');
+    }
+
+    if (scheduledAt && scheduledAt.getTime() <= Date.now()) {
+      throw new BadRequestException('sendAt must be in the future');
+    }
+
+    const delayMs = scheduledAt ? Math.max(0, scheduledAt.getTime() - Date.now()) : 0;
+
     const template = await this.prisma.communicationTemplate.findFirst({
       where: {
         id: input.dto.templateId,
@@ -194,7 +206,8 @@ export class CommunicationsService {
           senderUserId: input.req.auth?.userId || null,
           recipientAddress: template.channel === 'EMAIL' ? attendee.email : attendee.email,
           metadataJson: {
-            templateName: template.name
+            templateName: template.name,
+            scheduledFor: scheduledAt?.toISOString() || null
           }
         }
       });
@@ -205,6 +218,7 @@ export class CommunicationsService {
           communicationLogId: log.id
         },
         {
+          delay: delayMs,
           attempts: 3,
           backoff: {
             type: 'exponential',
@@ -233,7 +247,8 @@ export class CommunicationsService {
 
     return {
       templateId: template.id,
-      queued: jobs.length
+      queued: jobs.length,
+      scheduledFor: scheduledAt?.toISOString() || null
     };
   }
 
@@ -244,6 +259,15 @@ export class CommunicationsService {
     return this.prisma.communicationLog.findMany({
       where: {
         organizationId: org.id
+      },
+      include: {
+        template: {
+          select: {
+            id: true,
+            name: true,
+            channel: true
+          }
+        }
       },
       orderBy: {
         createdAt: 'desc'

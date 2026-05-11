@@ -364,4 +364,104 @@ describe.skipIf(!runIntegration)('Phase 5 imports and communications integration
     expect(listLogsRes.status).toBe(200);
     expect((listLogsRes.body as Array<{ id: string }>).length).toBeGreaterThanOrEqual(2);
   });
+
+  it('supports scheduled bulk communications delivery', async () => {
+    const org = await prisma.organization.create({ data: { name: 'Scheduled Org', code: 'schedorg' } });
+
+    await createOrgUser({
+      email: 'admin@schedorg.com',
+      password: 'StrongPass123!',
+      orgId: org.id,
+      roleName: 'ORG_ADMIN'
+    });
+
+    const auth = await loginOrgUser({
+      email: 'admin@schedorg.com',
+      password: 'StrongPass123!',
+      orgId: org.id
+    });
+
+    const event = await prisma.event.create({
+      data: {
+        organizationId: org.id,
+        name: 'Scheduled Event',
+        status: 'PUBLISHED'
+      }
+    });
+
+    const link = await prisma.registrationLink.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        slug: 'scheduled-event',
+        title: 'Scheduled Registration'
+      }
+    });
+
+    const registrant = await prisma.registrant.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        registrationLinkId: link.id,
+        referenceCode: 'SCHED001',
+        email: 'scheduled@comms.com',
+        fullName: 'Scheduled Recipient',
+        lifecycleStatus: 'APPROVED',
+        consentAccepted: true,
+        consentPolicyVersion: 'v1',
+        consentCapturedAt: new Date()
+      }
+    });
+
+    const createTemplateRes = await request(app.getHttpServer())
+      .post(`/org/${org.code}/communications/templates`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({
+        name: 'Scheduled Reminder',
+        channel: 'EMAIL',
+        subject: 'Scheduled Subject',
+        body: 'Scheduled hello {{fullName}}'
+      });
+
+    expect(createTemplateRes.status).toBe(201);
+
+    const sendAt = new Date(Date.now() + 2000).toISOString();
+    const queueRes = await request(app.getHttpServer())
+      .post(`/org/${org.code}/communications/bulk-send`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({
+        templateId: createTemplateRes.body.id,
+        attendeeIds: [registrant.id],
+        sendAt
+      });
+
+    expect(queueRes.status).toBe(201);
+    expect(queueRes.body.scheduledFor).toBe(sendAt);
+
+    const queuedLog = await prisma.communicationLog.findFirst({
+      where: {
+        organizationId: org.id,
+        registrantId: registrant.id
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    expect(queuedLog?.status).toBe('QUEUED');
+
+    let delivered = false;
+    for (let i = 0; i < 60; i += 1) {
+      const current = await prisma.communicationLog.findUnique({
+        where: { id: queuedLog!.id }
+      });
+
+      if (current?.status === 'SENT') {
+        delivered = true;
+        break;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    expect(delivered).toBe(true);
+  });
 });

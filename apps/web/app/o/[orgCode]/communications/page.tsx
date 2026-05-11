@@ -21,6 +21,15 @@ type CommunicationLog = {
   createdAt: string;
   sentAt: string | null;
   errorMessage: string | null;
+  metadataJson?: {
+    scheduledFor?: string | null;
+    templateName?: string;
+  } | null;
+  template?: {
+    id: string;
+    name: string;
+    channel: 'EMAIL' | 'SMS';
+  } | null;
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
@@ -39,6 +48,8 @@ export default function CommunicationsPage() {
 
   const [bulkTemplateId, setBulkTemplateId] = useState('');
   const [attendeeIdsText, setAttendeeIdsText] = useState('');
+  const [sendMode, setSendMode] = useState<'NOW' | 'SCHEDULED'>('NOW');
+  const [scheduledAtLocal, setScheduledAtLocal] = useState('');
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -184,6 +195,8 @@ export default function CommunicationsPage() {
       .map(item => item.trim())
       .filter(Boolean);
 
+    const sendAtIso = sendMode === 'SCHEDULED' && scheduledAtLocal ? new Date(scheduledAtLocal).toISOString() : undefined;
+
     const response = await fetch(`${API_BASE}/org/${orgCode}/communications/bulk-send`, {
       method: 'POST',
       headers: {
@@ -192,7 +205,8 @@ export default function CommunicationsPage() {
       },
       body: JSON.stringify({
         templateId: bulkTemplateId,
-        attendeeIds: attendeeIds.length > 0 ? attendeeIds : undefined
+        attendeeIds: attendeeIds.length > 0 ? attendeeIds : undefined,
+        sendAt: sendAtIso
       })
     });
 
@@ -300,8 +314,27 @@ export default function CommunicationsPage() {
             placeholder="Optional attendee IDs (comma-separated)"
             className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
           />
+          <div className="flex items-center gap-2">
+            <select
+              value={sendMode}
+              onChange={event => setSendMode(event.target.value as 'NOW' | 'SCHEDULED')}
+              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+            >
+              <option value="NOW">Send now</option>
+              <option value="SCHEDULED">Schedule</option>
+            </select>
+            {sendMode === 'SCHEDULED' ? (
+              <input
+                type="datetime-local"
+                value={scheduledAtLocal}
+                onChange={event => setScheduledAtLocal(event.target.value)}
+                required
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 [color-scheme:dark]"
+              />
+            ) : null}
+          </div>
           <button type="submit" className="rounded-lg bg-emerald-400 px-4 py-2 font-semibold text-slate-950">
-            Queue send
+            {sendMode === 'SCHEDULED' ? 'Schedule send' : 'Queue send'}
           </button>
         </form>
 
@@ -318,6 +351,12 @@ export default function CommunicationsPage() {
                     <p className="truncate">{item.recipientAddress}</p>
                     <p className="text-xs text-slate-400">{new Date(item.createdAt).toLocaleString()}</p>
                   </div>
+                  {item.metadataJson?.scheduledFor ? (
+                    <p className="mt-1 text-xs text-indigo-300">
+                      Scheduled for: {new Date(item.metadataJson.scheduledFor).toLocaleString()}
+                    </p>
+                  ) : null}
+                  {item.template?.name ? <p className="mt-1 text-xs text-slate-400">Template: {item.template.name}</p> : null}
                   {item.errorMessage ? <p className="mt-1 text-xs text-rose-300">{item.errorMessage}</p> : null}
                 </li>
               ))}

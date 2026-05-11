@@ -33,6 +33,14 @@ export type BackupArtifacts = {
   reports: string[];
 };
 
+export type BackupRestoreDrillTriggerResult = {
+  accepted: boolean;
+  action: 'backup_restore_drill';
+  pid: number;
+  scriptPath: string;
+  startedAt: string;
+};
+
 export type SystemUser = {
   id: string;
   email: string;
