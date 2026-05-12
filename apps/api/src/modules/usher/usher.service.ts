@@ -62,6 +62,54 @@ export class UsherService {
     };
   }
 
+  private normalizeZone(value: string | null | undefined): string | null {
+    if (!value) {
+      return null;
+    }
+
+    const next = value.trim().toLowerCase();
+    return next.length > 0 ? next : null;
+  }
+
+  private getCandidateZones(input: {
+    registrationLinkTitle: string;
+    linkTypeName: string | null;
+    responses: Array<{ fieldKey: string; valueText: string }>;
+  }): string[] {
+    const zoneKeys = new Set(['accesszone', 'access_level', 'accesslevel', 'zone', 'category']);
+    const candidates = [input.registrationLinkTitle, input.linkTypeName || ''];
+
+    for (const response of input.responses) {
+      if (zoneKeys.has(response.fieldKey.trim().toLowerCase())) {
+        candidates.push(response.valueText);
+      }
+    }
+
+    return candidates
+      .map(item => this.normalizeZone(item))
+      .filter((item): item is string => Boolean(item));
+  }
+
+  private buildRegistrantSnapshot(input: {
+    id: string;
+    fullName: string;
+    email: string;
+    referenceCode: string;
+    registrationLinkTitle: string;
+    responses: Array<{ fieldKey: string; valueText: string }>;
+  }) {
+    const photo = input.responses.find(item => item.fieldKey === '__photo_upload__')?.valueText || null;
+
+    return {
+      id: input.id,
+      name: input.fullName,
+      email: input.email,
+      referenceCode: input.referenceCode,
+      category: input.registrationLinkTitle,
+      photoUrl: photo
+    };
+  }
+
   async listAssignments(input: { req: RequestWithAuth }) {
     const auth = this.requireUsherAccess(input.req);
 
@@ -211,8 +259,29 @@ export class UsherService {
           select: {
             id: true,
             fullName: true,
+            email: true,
+            referenceCode: true,
             organizationId: true,
             eventId: true,
+            registrationLink: {
+              select: {
+                title: true,
+                linkType: {
+                  select: {
+                    name: true
+                  }
+                }
+              }
+            },
+            responses: {
+              where: {
+                OR: [{ fieldKey: '__photo_upload__' }, { fieldKey: 'accessZone' }, { fieldKey: 'access_level' }, { fieldKey: 'accessLevel' }, { fieldKey: 'zone' }, { fieldKey: 'category' }]
+              },
+              select: {
+                fieldKey: true,
+                valueText: true
+              }
+            },
             event: {
               select: {
                 name: true
@@ -245,15 +314,43 @@ export class UsherService {
     if (input.dto.selectedEventId && input.dto.selectedEventId !== qr.registrant.eventId) {
       return {
         status: 'WRONG_EVENT',
-        registrant: {
+        registrant: this.buildRegistrantSnapshot({
           id: qr.registrant.id,
-          name: qr.registrant.fullName
-        },
+          fullName: qr.registrant.fullName,
+          email: qr.registrant.email,
+          referenceCode: qr.registrant.referenceCode,
+          registrationLinkTitle: qr.registrant.registrationLink.title,
+          responses: qr.registrant.responses
+        }),
         event: {
           id: qr.registrant.eventId,
           name: qr.registrant.event.name
         }
       };
+    }
+
+    const requestedZone = this.normalizeZone(input.dto.accessZone);
+    if (requestedZone) {
+      const allowedZones = this.getCandidateZones({
+        registrationLinkTitle: qr.registrant.registrationLink.title,
+        linkTypeName: qr.registrant.registrationLink.linkType?.name || null,
+        responses: qr.registrant.responses
+      });
+
+      if (!allowedZones.includes(requestedZone)) {
+        return {
+          status: 'ACCESS_DENIED',
+          reason: 'ZONE_RESTRICTED',
+          registrant: this.buildRegistrantSnapshot({
+            id: qr.registrant.id,
+            fullName: qr.registrant.fullName,
+            email: qr.registrant.email,
+            referenceCode: qr.registrant.referenceCode,
+            registrationLinkTitle: qr.registrant.registrationLink.title,
+            responses: qr.registrant.responses
+          })
+        };
+      }
     }
 
     const registrantStatus = await this.prisma.registrant.findUnique({
@@ -268,7 +365,15 @@ export class UsherService {
     if (!registrantStatus || registrantStatus.lifecycleStatus !== 'APPROVED') {
       return {
         status: 'NOT_APPROVED',
-        reason: registrantStatus?.lifecycleStatus || 'UNKNOWN'
+        reason: registrantStatus?.lifecycleStatus || 'UNKNOWN',
+        registrant: this.buildRegistrantSnapshot({
+          id: qr.registrant.id,
+          fullName: qr.registrant.fullName,
+          email: qr.registrant.email,
+          referenceCode: qr.registrant.referenceCode,
+          registrationLinkTitle: qr.registrant.registrationLink.title,
+          responses: qr.registrant.responses
+        })
       };
     }
 
@@ -300,10 +405,14 @@ export class UsherService {
       return {
         status: 'DUPLICATE',
         checkinId: duplicate.id,
-        registrant: {
+        registrant: this.buildRegistrantSnapshot({
           id: qr.registrant.id,
-          name: qr.registrant.fullName
-        },
+          fullName: qr.registrant.fullName,
+          email: qr.registrant.email,
+          referenceCode: qr.registrant.referenceCode,
+          registrationLinkTitle: qr.registrant.registrationLink.title,
+          responses: qr.registrant.responses
+        }),
         event: {
           id: qr.registrant.eventId,
           name: qr.registrant.event.name
@@ -351,10 +460,14 @@ export class UsherService {
     return {
       status: 'ACCEPTED',
       checkinId: created.id,
-      registrant: {
+      registrant: this.buildRegistrantSnapshot({
         id: qr.registrant.id,
-        name: qr.registrant.fullName
-      },
+        fullName: qr.registrant.fullName,
+        email: qr.registrant.email,
+        referenceCode: qr.registrant.referenceCode,
+        registrationLinkTitle: qr.registrant.registrationLink.title,
+        responses: qr.registrant.responses
+      }),
       event: {
         id: qr.registrant.eventId,
         name: qr.registrant.event.name

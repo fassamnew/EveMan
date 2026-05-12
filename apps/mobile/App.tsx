@@ -6,7 +6,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as TaskManager from 'expo-task-manager';
 import CryptoJS from 'crypto-js';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Pressable, SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 
 type Session = {
   accessToken: string;
@@ -55,6 +55,10 @@ type CheckinResult = {
   registrant?: {
     id: string;
     name: string;
+    email?: string;
+    referenceCode?: string;
+    category?: string;
+    photoUrl?: string | null;
   };
   event?: {
     id: string;
@@ -66,6 +70,7 @@ type PendingCheckin = {
   id: string;
   token: string;
   selectedEventId: string | null;
+  accessZone: string | null;
   idempotencyKey: string;
   deviceId: string;
   source: 'MOBILE_OFFLINE';
@@ -389,6 +394,7 @@ async function runBackgroundQueueSyncOnce(): Promise<BackgroundFetch.BackgroundF
           body: JSON.stringify({
             token: item.token,
             selectedEventId: item.selectedEventId,
+            accessZone: item.accessZone || undefined,
             idempotencyKey: item.idempotencyKey,
             deviceId: item.deviceId,
             source: item.source,
@@ -478,6 +484,8 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<ManualSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isManualCheckinRegistrantId, setIsManualCheckinRegistrantId] = useState<string | null>(null);
+  const [accessZone, setAccessZone] = useState('');
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('ALL');
   const [screen, setScreen] = useState<AppScreen>('HOME');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -771,6 +779,7 @@ export default function App() {
       id: createIdempotencyKey(),
       token,
       selectedEventId,
+      accessZone: accessZone.trim() || null,
       idempotencyKey: createIdempotencyKey(),
       deviceId: 'mobile-usher-device',
       source: 'MOBILE_OFFLINE',
@@ -938,6 +947,60 @@ export default function App() {
     }
   }
 
+  async function manualCheckInFromSearch(item: ManualSearchResult): Promise<void> {
+    if (!session?.organizationCode) {
+      setError('Organization code is required for manual check-in actions');
+      return;
+    }
+
+    setError(null);
+    setIsManualCheckinRegistrantId(item.id);
+
+    try {
+      const response = await authenticatedFetch(`/org/${session.organizationCode}/attendees/${item.id}/check-in`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({})
+      });
+
+      if (!response || !response.ok) {
+        const payload = (await response?.json().catch(() => ({}))) as { message?: string | string[] };
+        const message = Array.isArray(payload.message) ? payload.message[0] : payload.message;
+        setError(message || 'Manual check-in failed');
+        return;
+      }
+
+      setLastCheckin({
+        status: 'ACCEPTED',
+        registrant: {
+          id: item.id,
+          name: item.fullName,
+          email: item.email,
+          referenceCode: item.referenceCode,
+          category: item.category,
+          photoUrl: item.photoUrl
+        },
+        event: item.event
+      });
+
+      await appendScanHistory({
+        id: createIdempotencyKey(),
+        status: 'ACCEPTED',
+        message: `Manual search check-in completed for ${item.fullName}`,
+        scannedAt: new Date().toISOString(),
+        syncedAt: new Date().toISOString()
+      });
+
+      await runManualSearch();
+    } catch {
+      setError('Manual check-in failed due to network/runtime error');
+    } finally {
+      setIsManualCheckinRegistrantId(null);
+    }
+  }
+
   async function clearScanHistory(): Promise<void> {
     await SecureStore.deleteItemAsync(SCAN_HISTORY_KEY);
     setScanHistory([]);
@@ -999,6 +1062,7 @@ export default function App() {
             body: JSON.stringify({
               token: item.token,
               selectedEventId: item.selectedEventId,
+              accessZone: item.accessZone || undefined,
               idempotencyKey: item.idempotencyKey,
               deviceId: item.deviceId,
               source: item.source,
@@ -1194,6 +1258,7 @@ export default function App() {
         body: JSON.stringify({
           token: effectiveToken,
           selectedEventId,
+          accessZone: accessZone.trim() || undefined,
           idempotencyKey: createIdempotencyKey(),
           deviceId: 'mobile-usher-device',
           source: 'MOBILE_ONLINE',
@@ -1504,6 +1569,7 @@ export default function App() {
                   <ScrollView style={styles.historyScroll} contentContainerStyle={styles.historyList}>
                     {searchResults.map(item => (
                       <View key={item.id} style={styles.historyItem}>
+                        {item.photoUrl ? <Image source={{ uri: item.photoUrl }} style={styles.attendeePhoto} /> : null}
                         <Text style={styles.historyStatus}>{item.fullName}</Text>
                         <Text style={styles.meta}>{item.email}</Text>
                         <Text style={styles.meta}>Ref: {item.referenceCode}</Text>
@@ -1513,6 +1579,17 @@ export default function App() {
                         <Text style={styles.meta}>
                           Check-in: {item.checkin.status === 'ALREADY_CHECKED_IN' ? 'Already checked in' : 'Not checked in'}
                         </Text>
+                        {item.checkin.status !== 'ALREADY_CHECKED_IN' ? (
+                          <Pressable
+                            style={styles.buttonSecondary}
+                            onPress={() => void manualCheckInFromSearch(item)}
+                            disabled={isManualCheckinRegistrantId === item.id}
+                          >
+                            <Text style={styles.buttonTextInverse}>
+                              {isManualCheckinRegistrantId === item.id ? 'Checking in...' : 'Check in attendee'}
+                            </Text>
+                          </Pressable>
+                        ) : null}
                       </View>
                     ))}
                   </ScrollView>
@@ -1619,6 +1696,14 @@ export default function App() {
 
             <Text style={styles.label}>Scanner verification</Text>
             <Text style={styles.meta}>Selected event: {selectedEventId || 'none'}</Text>
+            <TextInput
+              value={accessZone}
+              onChangeText={setAccessZone}
+              placeholder="Optional access zone (VIP, Hall-A, etc.)"
+              placeholderTextColor="#94a3b8"
+              style={styles.input}
+              autoCapitalize="none"
+            />
                 <Pressable style={styles.buttonSecondary} onPress={() => void exportSyncDiagnostics()}>
                   <Text style={styles.buttonTextInverse}>Export sync diagnostics</Text>
                 </Pressable>
@@ -1670,6 +1755,20 @@ export default function App() {
               </Text>
             </Pressable>
             <Text style={styles.meta}>{renderResult()}</Text>
+
+            {lastCheckin?.registrant ? (
+              <View style={styles.verificationCard}>
+                <Text style={styles.label}>Verification Details</Text>
+                {lastCheckin.registrant.photoUrl ? (
+                  <Image source={{ uri: lastCheckin.registrant.photoUrl }} style={styles.attendeePhotoLarge} />
+                ) : null}
+                <Text style={styles.meta}>Name: {lastCheckin.registrant.name}</Text>
+                <Text style={styles.meta}>Email: {lastCheckin.registrant.email || 'n/a'}</Text>
+                <Text style={styles.meta}>Reference: {lastCheckin.registrant.referenceCode || 'n/a'}</Text>
+                <Text style={styles.meta}>Category: {lastCheckin.registrant.category || 'n/a'}</Text>
+                <Text style={styles.meta}>Event: {lastCheckin.event?.name || 'n/a'}</Text>
+              </View>
+            ) : null}
 
             <Text style={styles.label}>Recent scan history</Text>
             {filteredHistory.length === 0 ? (
@@ -1895,6 +1994,28 @@ const styles = StyleSheet.create({
     color: '#bae6fd',
     fontWeight: '700',
     marginBottom: 4
+  },
+  verificationCard: {
+    marginTop: 12,
+    borderColor: '#334155',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    gap: 6
+  },
+  attendeePhoto: {
+    width: 56,
+    height: 56,
+    borderRadius: 8,
+    marginBottom: 6,
+    backgroundColor: '#1e293b'
+  },
+  attendeePhotoLarge: {
+    width: 96,
+    height: 96,
+    borderRadius: 12,
+    marginBottom: 8,
+    backgroundColor: '#1e293b'
   },
   metaSmall: {
     color: '#94a3b8',

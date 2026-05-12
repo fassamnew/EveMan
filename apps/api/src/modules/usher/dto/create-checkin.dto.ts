@@ -24,5 +24,10 @@ export class CreateCheckinDto {
 
   @IsOptional()
   @IsString()
+  @MinLength(1)
+  accessZone?: string;
+
+  @IsOptional()
+  @IsString()
   scannedAt?: string;
 }

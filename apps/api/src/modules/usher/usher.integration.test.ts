@@ -439,4 +439,79 @@ describe.skipIf(!runIntegration)('Usher integration (MySQL)', () => {
     expect(byPhoneRes.body.items).toHaveLength(1);
     expect(byPhoneRes.body.items[0].photoUrl).toBe('https://cdn.example.com/p.jpg');
   });
+
+  it('returns ACCESS_DENIED when access zone does not match attendee zone', async () => {
+    const org = await prisma.organization.create({ data: { name: 'Zone Org', code: 'zoneorg' } });
+
+    await createOrgUser({
+      email: 'usher@zone.org',
+      password: 'StrongPass123!',
+      orgId: org.id,
+      roleName: 'ORG_STAFF'
+    });
+
+    const auth = await loginOrgUser({
+      email: 'usher@zone.org',
+      password: 'StrongPass123!',
+      orgId: org.id
+    });
+
+    const event = await prisma.event.create({
+      data: {
+        organizationId: org.id,
+        name: 'Zone Event',
+        status: 'PUBLISHED'
+      }
+    });
+
+    const link = await prisma.registrationLink.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        slug: 'zone-event',
+        title: 'VIP'
+      }
+    });
+
+    const registrant = await prisma.registrant.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        registrationLinkId: link.id,
+        referenceCode: 'ZONE001',
+        email: 'zone.person@org.com',
+        fullName: 'Zone Person',
+        lifecycleStatus: 'APPROVED',
+        consentAccepted: true,
+        consentPolicyVersion: 'v1',
+        consentCapturedAt: new Date()
+      }
+    });
+
+    await prisma.registrantResponse.create({
+      data: {
+        registrantId: registrant.id,
+        fieldKey: 'accessZone',
+        valueText: 'VIP'
+      }
+    });
+
+    const issued = await badgeQrService.issueForRegistrant({ registrantId: registrant.id });
+
+    const deniedRes = await request(app.getHttpServer())
+      .post('/usher/checkins')
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({
+        token: issued.qrToken,
+        selectedEventId: event.id,
+        accessZone: 'General',
+        idempotencyKey: 'zone-001',
+        deviceId: 'device-z1',
+        source: 'MOBILE_ONLINE'
+      });
+
+    expect(deniedRes.status).toBe(201);
+    expect(deniedRes.body.status).toBe('ACCESS_DENIED');
+    expect(deniedRes.body.reason).toBe('ZONE_RESTRICTED');
+  });
 });
