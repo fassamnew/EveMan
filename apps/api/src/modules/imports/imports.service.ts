@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditOutcome, ImportDuplicateStrategy, Prisma } from '@prisma/client';
 import { parse as parseCsv } from 'csv-parse/sync';
+import { read as readXlsx, utils as xlsxUtils } from 'xlsx';
 import { PrismaService } from '../../infra/db/prisma.service';
 import { getSystemQueue } from '../../infra/queue/queue.provider';
 import { AuditService } from '../common/audit.service';
@@ -54,7 +55,23 @@ export class ImportsService {
       return records.map(item => ({ data: item }));
     }
 
-    throw new BadRequestException('Only CSV sourceFileType is supported in current hardening mode');
+    if (dto.sourceFileType === 'XLSX') {
+      const workbook = readXlsx(buffer, { type: 'buffer' });
+      const sheetName = workbook.SheetNames[0];
+      if (!sheetName) {
+        throw new BadRequestException('XLSX file has no readable worksheet');
+      }
+
+      const sheet = workbook.Sheets[sheetName];
+      const records = xlsxUtils.sheet_to_json<Record<string, unknown>>(sheet, {
+        defval: '',
+        raw: false
+      });
+
+      return records.map(item => ({ data: item }));
+    }
+
+    throw new BadRequestException('Unsupported sourceFileType');
   }
 
   private resolveRows(dto: CreateImportJobDto): Array<{ data: Record<string, unknown> }> {
@@ -78,6 +95,14 @@ export class ImportsService {
     const first = rows[0]?.data || {};
     if (!(dto.mappingProfile.fullName in first) || !(dto.mappingProfile.email in first)) {
       throw new BadRequestException('Mapping profile columns are missing in import data');
+    }
+
+    if (dto.mappingProfile.category && !(dto.mappingProfile.category in first)) {
+      throw new BadRequestException('Category mapping column is missing in import data');
+    }
+
+    if (!dto.registrationLinkId && !dto.mappingProfile.category) {
+      throw new BadRequestException('Provide registrationLinkId or mappingProfile.category for category mapping');
     }
   }
 

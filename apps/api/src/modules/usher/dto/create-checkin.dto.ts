@@ -30,4 +30,9 @@ export class CreateCheckinDto {
   @IsOptional()
   @IsString()
   scannedAt?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  entrance?: string; // Checkpoint/entrance identifier (e.g., "Main Gate", "VIP Entrance")
 }

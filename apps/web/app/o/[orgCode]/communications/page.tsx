@@ -7,15 +7,27 @@ import { loadSession } from '../../../../lib/session';
 type CommunicationTemplate = {
   id: string;
   name: string;
-  channel: 'EMAIL' | 'SMS';
+  channel: 'EMAIL' | 'SMS' | 'WHATSAPP';
   subject: string | null;
   body: string;
   isActive: boolean;
+  messageType:
+    | 'REGISTRATION_CONFIRMATION'
+    | 'BADGE_DELIVERY'
+    | 'APPROVAL_CONFIRMATION'
+    | 'REJECTION_MESSAGE'
+    | 'REMINDER'
+    | 'EVENT_UPDATE'
+    | 'VIP_INSTRUCTION'
+    | 'SPEAKER_INSTRUCTION'
+    | 'MEDIA_ACCREDITATION_NOTICE'
+    | 'THANK_YOU_MESSAGE'
+    | null;
 };
 
 type CommunicationLog = {
   id: string;
-  channel: 'EMAIL' | 'SMS';
+  channel: 'EMAIL' | 'SMS' | 'WHATSAPP';
   status: 'QUEUED' | 'SENT' | 'FAILED';
   recipientAddress: string;
   createdAt: string;
@@ -28,11 +40,24 @@ type CommunicationLog = {
   template?: {
     id: string;
     name: string;
-    channel: 'EMAIL' | 'SMS';
+    channel: 'EMAIL' | 'SMS' | 'WHATSAPP';
   } | null;
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
+
+const MESSAGE_TYPE_OPTIONS: Array<{ value: NonNullable<CommunicationTemplate['messageType']>; label: string }> = [
+  { value: 'REGISTRATION_CONFIRMATION', label: 'Registration confirmation' },
+  { value: 'BADGE_DELIVERY', label: 'Badge delivery' },
+  { value: 'APPROVAL_CONFIRMATION', label: 'Approval confirmation' },
+  { value: 'REJECTION_MESSAGE', label: 'Rejection message' },
+  { value: 'REMINDER', label: 'Reminder' },
+  { value: 'EVENT_UPDATE', label: 'Event update' },
+  { value: 'VIP_INSTRUCTION', label: 'VIP instruction' },
+  { value: 'SPEAKER_INSTRUCTION', label: 'Speaker instruction' },
+  { value: 'MEDIA_ACCREDITATION_NOTICE', label: 'Media accreditation notice' },
+  { value: 'THANK_YOU_MESSAGE', label: 'Thank-you message' }
+];
 
 export default function CommunicationsPage() {
   const params = useParams<{ orgCode: string }>();
@@ -42,9 +67,10 @@ export default function CommunicationsPage() {
   const [templates, setTemplates] = useState<CommunicationTemplate[]>([]);
   const [logs, setLogs] = useState<CommunicationLog[]>([]);
   const [name, setName] = useState('');
-  const [channel, setChannel] = useState<'EMAIL' | 'SMS'>('EMAIL');
+  const [channel, setChannel] = useState<'EMAIL' | 'SMS' | 'WHATSAPP'>('EMAIL');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('Hello {{fullName}}');
+  const [messageType, setMessageType] = useState<NonNullable<CommunicationTemplate['messageType']> | ''>('');
 
   const [bulkTemplateId, setBulkTemplateId] = useState('');
   const [attendeeIdsText, setAttendeeIdsText] = useState('');
@@ -135,7 +161,8 @@ export default function CommunicationsPage() {
         name,
         channel,
         subject: subject || undefined,
-        body
+        body,
+        messageType: messageType || undefined
       })
     });
 
@@ -148,6 +175,7 @@ export default function CommunicationsPage() {
     setName('');
     setSubject('');
     setBody('Hello {{fullName}}');
+    setMessageType('');
     await fetchData();
   }
 
@@ -245,11 +273,12 @@ export default function CommunicationsPage() {
           />
           <select
             value={channel}
-            onChange={event => setChannel(event.target.value as 'EMAIL' | 'SMS')}
+            onChange={event => setChannel(event.target.value as 'EMAIL' | 'SMS' | 'WHATSAPP')}
             className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
           >
             <option value="EMAIL">EMAIL</option>
             <option value="SMS">SMS</option>
+            <option value="WHATSAPP">WHATSAPP</option>
           </select>
           <input
             value={subject}
@@ -257,6 +286,20 @@ export default function CommunicationsPage() {
             placeholder="Subject (optional for SMS)"
             className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
           />
+          <select
+            value={messageType}
+            onChange={event =>
+              setMessageType(event.target.value as NonNullable<CommunicationTemplate['messageType']> | '')
+            }
+            className="md:col-span-3 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+          >
+            <option value="">No predefined message type</option>
+            {MESSAGE_TYPE_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
           <textarea
             value={body}
             onChange={event => setBody(event.target.value)}
@@ -280,7 +323,7 @@ export default function CommunicationsPage() {
                     <p className="font-medium">{item.name}</p>
                     <p className="text-xs text-slate-300">{item.channel}</p>
                     <p className="text-xs text-slate-300">{item.isActive ? 'ACTIVE' : 'INACTIVE'}</p>
-                    <p className="truncate text-xs text-slate-400">{item.subject || item.body}</p>
+                    <p className="truncate text-xs text-slate-400">{item.messageType || item.subject || item.body}</p>
                     <button
                       type="button"
                       onClick={() => void updateTemplate(item.id)}

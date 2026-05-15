@@ -217,8 +217,12 @@ export class SuperAdminService {
     return this.getJsonSetting(SETTING_KEYS.communications, {
       emailProvider: null,
       smsProvider: null,
+      whatsappProvider: null,
       senderName: null,
-      senderEmail: null
+      senderEmail: null,
+      emailWebhookUrl: null,
+      smsWebhookUrl: null,
+      whatsappWebhookUrl: null
     });
   }
 

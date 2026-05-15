@@ -1,4 +1,5 @@
 import { IsBoolean, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { COMMUNICATION_MESSAGE_TYPES, type CommunicationMessageType } from '../communication-message-types';
 
 export class UpdateCommunicationTemplateDto {
   @IsOptional()
@@ -24,4 +25,8 @@ export class UpdateCommunicationTemplateDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsIn(COMMUNICATION_MESSAGE_TYPES)
+  messageType?: CommunicationMessageType;
 }

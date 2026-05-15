@@ -48,10 +48,74 @@ type DashboardResponse = {
   cached: boolean;
 };
 
+type CategoryBreakdownResponse = {
+  breakdown: Array<{
+    category: string;
+    count: number;
+  }>;
+};
+
+type ScanMetricsResponse = {
+  metrics: {
+    accepted: number;
+    duplicate: number;
+    invalid: number;
+    conflict: number;
+    byEntrance: Record<string, number>;
+    byCategory: Record<string, number>;
+  };
+};
+
+type LinkBreakdownResponse = {
+  breakdown: Array<{
+    linkId: string;
+    slug: string;
+    title: string;
+    eventId: string;
+    registrations: number;
+    checkins: number;
+  }>;
+};
+
+type LastScannedResponse = {
+  attendees: Array<{
+    attendeeId: string;
+    fullName: string;
+    email: string;
+    referenceCode: string;
+    checkinId: string;
+    scannedAt: string;
+    entrance: string | null;
+    usher: {
+      id: string;
+      name: string;
+    } | null;
+  }>;
+};
+
+type NoShowResponse = {
+  analysis: {
+    approvedCount: number;
+    checkedInCount: number;
+    noShowCount: number;
+    noShowRate: number;
+  };
+};
+
 type ReportItem = {
   reportId: string;
   status: string;
   format: 'csv' | 'json';
+  dataset:
+    | 'EVENT_SUMMARY'
+    | 'FULL_REGISTRATION_LIST'
+    | 'APPROVED_LIST'
+    | 'PENDING_LIST'
+    | 'CHECKED_IN_LIST'
+    | 'NO_SHOW_LIST'
+    | 'CATEGORY_REPORT'
+    | 'USHER_SCAN_REPORT'
+    | 'COMMUNICATION_REPORT';
   eventId: string | null;
   createdAt: string | null;
   completedAt: string | null;
@@ -68,6 +132,16 @@ type QueueReportResponse = {
   reportId: string;
   status: string;
   format: 'csv' | 'json';
+  dataset:
+    | 'EVENT_SUMMARY'
+    | 'FULL_REGISTRATION_LIST'
+    | 'APPROVED_LIST'
+    | 'PENDING_LIST'
+    | 'CHECKED_IN_LIST'
+    | 'NO_SHOW_LIST'
+    | 'CATEGORY_REPORT'
+    | 'USHER_SCAN_REPORT'
+    | 'COMMUNICATION_REPORT';
   eventId: string | null;
 };
 
@@ -103,12 +177,28 @@ export default function AnalyticsPage() {
     communicationFailed: number;
   } | null>(null);
   const [reportFormat, setReportFormat] = useState<'csv' | 'json'>('csv');
+  const [reportDataset, setReportDataset] = useState<
+    | 'EVENT_SUMMARY'
+    | 'FULL_REGISTRATION_LIST'
+    | 'APPROVED_LIST'
+    | 'PENDING_LIST'
+    | 'CHECKED_IN_LIST'
+    | 'NO_SHOW_LIST'
+    | 'CATEGORY_REPORT'
+    | 'USHER_SCAN_REPORT'
+    | 'COMMUNICATION_REPORT'
+  >('EVENT_SUMMARY');
   const [reportEventId, setReportEventId] = useState<string>('');
   const [reports, setReports] = useState<ReportItem[]>([]);
   const [reportError, setReportError] = useState<string | null>(null);
   const [isQueueingReport, setIsQueueingReport] = useState(false);
   const [isLoadingReports, setIsLoadingReports] = useState(false);
   const [downloadingReportId, setDownloadingReportId] = useState<string | null>(null);
+  const [categoryBreakdown, setCategoryBreakdown] = useState<CategoryBreakdownResponse['breakdown']>([]);
+  const [linkBreakdown, setLinkBreakdown] = useState<LinkBreakdownResponse['breakdown']>([]);
+  const [scanMetrics, setScanMetrics] = useState<ScanMetricsResponse['metrics'] | null>(null);
+  const [lastScanned, setLastScanned] = useState<LastScannedResponse['attendees']>([]);
+  const [noShowAnalysis, setNoShowAnalysis] = useState<NoShowResponse['analysis'] | null>(null);
 
   const hasExportRole = useMemo(() => {
     const session = loadSession();
@@ -140,19 +230,46 @@ export default function AnalyticsPage() {
     }
 
     try {
-      const response = await fetch(`${API_BASE}/org/${orgCode}/dashboard/overview`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
+      const [overviewResponse, categoryResponse, linkResponse, scanResponse, lastScannedResponse, noShowResponse] = await Promise.all([
+        fetch(`${API_BASE}/org/${orgCode}/dashboard/overview`, {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }),
+        fetch(`${API_BASE}/org/${orgCode}/analytics/category-breakdown`, {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }),
+        fetch(`${API_BASE}/org/${orgCode}/analytics/link-breakdown`, {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }),
+        fetch(`${API_BASE}/org/${orgCode}/analytics/scan-metrics`, {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }),
+        fetch(`${API_BASE}/org/${orgCode}/analytics/last-scanned?limit=10`, {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }),
+        fetch(`${API_BASE}/org/${orgCode}/analytics/no-show`, {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        })
+      ]);
 
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as { message?: string };
+      if (!overviewResponse.ok) {
+        const payload = (await overviewResponse.json().catch(() => ({}))) as { message?: string };
         setError(payload.message || 'Failed to load dashboard');
         return;
       }
 
-      const payload = (await response.json()) as DashboardResponse;
+      const payload = (await overviewResponse.json()) as DashboardResponse;
       setKpiDeltas(
         data
           ? {
@@ -165,6 +282,31 @@ export default function AnalyticsPage() {
       );
       setData(payload);
       setLastUpdatedAt(new Date().toISOString());
+
+      if (categoryResponse.ok) {
+        const categoryPayload = (await categoryResponse.json()) as CategoryBreakdownResponse;
+        setCategoryBreakdown(categoryPayload.breakdown || []);
+      }
+
+      if (linkResponse.ok) {
+        const linkPayload = (await linkResponse.json()) as LinkBreakdownResponse;
+        setLinkBreakdown(linkPayload.breakdown || []);
+      }
+
+      if (scanResponse.ok) {
+        const scanPayload = (await scanResponse.json()) as ScanMetricsResponse;
+        setScanMetrics(scanPayload.metrics);
+      }
+
+      if (lastScannedResponse.ok) {
+        const lastScannedPayload = (await lastScannedResponse.json()) as LastScannedResponse;
+        setLastScanned(lastScannedPayload.attendees || []);
+      }
+
+      if (noShowResponse.ok) {
+        const noShowPayload = (await noShowResponse.json()) as NoShowResponse;
+        setNoShowAnalysis(noShowPayload.analysis);
+      }
     } catch {
       setError('Network error while loading dashboard');
     } finally {
@@ -221,6 +363,7 @@ export default function AnalyticsPage() {
 
     const params = new URLSearchParams();
     params.set('format', reportFormat);
+    params.set('dataset', reportDataset);
     if (reportEventId.trim()) {
       params.set('eventId', reportEventId.trim());
     }
@@ -249,6 +392,7 @@ export default function AnalyticsPage() {
           reportId: payload.reportId,
           status: payload.status,
           format: payload.format,
+          dataset: payload.dataset,
           eventId: payload.eventId,
           createdAt: new Date().toISOString(),
           completedAt: null,
@@ -497,6 +641,24 @@ export default function AnalyticsPage() {
               />
             </section>
 
+            <section className="mb-6 grid gap-3 md:grid-cols-3">
+              <KpiCard
+                label="No-shows"
+                value={noShowAnalysis ? `${noShowAnalysis.noShowCount} (${noShowAnalysis.noShowRate}%)` : '-'}
+                delta={null}
+              />
+              <KpiCard
+                label="Duplicate scans"
+                value={scanMetrics ? `${scanMetrics.duplicate}` : '-'}
+                delta={null}
+              />
+              <KpiCard
+                label="Invalid scans"
+                value={scanMetrics ? `${scanMetrics.invalid}` : '-'}
+                delta={null}
+              />
+            </section>
+
             <section className="mb-6 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
               <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-300">
                 7-day trend (registrations vs check-ins)
@@ -522,13 +684,133 @@ export default function AnalyticsPage() {
 
             <section className="mb-6 rounded-xl border border-slate-800 bg-slate-900/60">
               <div className="border-b border-slate-800 px-4 py-3">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Category breakdown</h2>
+              </div>
+              {categoryBreakdown.length === 0 ? (
+                <p className="px-4 py-4 text-sm text-slate-300">No category data yet.</p>
+              ) : (
+                <ul>
+                  {categoryBreakdown.map(item => (
+                    <li key={item.category} className="border-t border-slate-800 px-4 py-3 text-sm">
+                      <div className="flex items-center justify-between">
+                        <p>{item.category}</p>
+                        <p className="text-cyan-300">{item.count}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section className="mb-6 rounded-xl border border-slate-800 bg-slate-900/60">
+              <div className="border-b border-slate-800 px-4 py-3">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Registrations by link</h2>
+              </div>
+              {linkBreakdown.length === 0 ? (
+                <p className="px-4 py-4 text-sm text-slate-300">No link data yet.</p>
+              ) : (
+                <ul>
+                  {linkBreakdown.map(item => (
+                    <li key={item.linkId} className="border-t border-slate-800 px-4 py-3 text-sm">
+                      <div className="grid gap-2 md:grid-cols-[1.5fr_1fr_1fr_1fr] md:items-center">
+                        <div>
+                          <p className="font-medium">{item.title}</p>
+                          <p className="text-xs text-slate-400">/{item.slug}</p>
+                        </div>
+                        <p className="text-xs text-slate-300">Registrations: {item.registrations}</p>
+                        <p className="text-xs text-slate-300">Check-ins: {item.checkins}</p>
+                        <p className="text-xs text-slate-300">
+                          Rate: {item.registrations > 0 ? Number(((item.checkins / item.registrations) * 100).toFixed(2)) : 0}%
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section className="mb-6 rounded-xl border border-slate-800 bg-slate-900/60">
+              <div className="border-b border-slate-800 px-4 py-3">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Entrance scan metrics</h2>
+              </div>
+              {scanMetrics ? (
+                <div className="grid gap-3 px-4 py-4 md:grid-cols-2">
+                  <p className="text-sm text-slate-300">Accepted: {scanMetrics.accepted}</p>
+                  <p className="text-sm text-slate-300">Duplicate: {scanMetrics.duplicate}</p>
+                  <p className="text-sm text-slate-300">Invalid: {scanMetrics.invalid}</p>
+                  <p className="text-sm text-slate-300">Conflict: {scanMetrics.conflict}</p>
+                  <div className="md:col-span-2">
+                    <p className="mb-2 text-xs uppercase tracking-wide text-slate-400">By entrance</p>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(scanMetrics.byEntrance).length === 0 ? (
+                        <span className="text-sm text-slate-300">No entrance data yet.</span>
+                      ) : (
+                        Object.entries(scanMetrics.byEntrance).map(([entrance, count]) => (
+                          <span key={entrance} className="rounded-full border border-slate-700 px-3 py-1 text-xs">
+                            {entrance}: {count}
+                          </span>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                  <div className="md:col-span-2">
+                    <p className="mb-2 text-xs uppercase tracking-wide text-slate-400">Check-ins by category</p>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(scanMetrics.byCategory || {}).length === 0 ? (
+                        <span className="text-sm text-slate-300">No category scan data yet.</span>
+                      ) : (
+                        Object.entries(scanMetrics.byCategory).map(([category, count]) => (
+                          <span key={category} className="rounded-full border border-slate-700 px-3 py-1 text-xs">
+                            {category}: {count}
+                          </span>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="px-4 py-4 text-sm text-slate-300">No scan metrics yet.</p>
+              )}
+            </section>
+
+            <section className="mb-6 rounded-xl border border-slate-800 bg-slate-900/60">
+              <div className="border-b border-slate-800 px-4 py-3">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
+                  Last scanned attendees
+                </h2>
+              </div>
+              {lastScanned.length === 0 ? (
+                <p className="px-4 py-4 text-sm text-slate-300">No recent check-ins recorded yet.</p>
+              ) : (
+                <ul>
+                  {lastScanned.map(item => (
+                    <li key={item.checkinId} className="border-t border-slate-800 px-4 py-3 text-sm">
+                      <div className="grid gap-1 md:grid-cols-[1.8fr_1fr_1fr] md:items-center">
+                        <div>
+                          <p className="font-medium">{item.fullName}</p>
+                          <p className="text-xs text-slate-400">{item.email}</p>
+                        </div>
+                        <p className="text-xs text-slate-300">Ref: {item.referenceCode}</p>
+                        <p className="text-xs text-slate-300">
+                          {new Date(item.scannedAt).toLocaleString()}
+                          {item.entrance ? ` · ${item.entrance}` : ''}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section className="mb-6 rounded-xl border border-slate-800 bg-slate-900/60">
+              <div className="border-b border-slate-800 px-4 py-3">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Report exports</h2>
                 <p className="mt-1 text-xs text-slate-400">
                   Queue async CSV/JSON exports with signed, time-limited download links.
                 </p>
               </div>
 
-              <div className="grid gap-2 border-b border-slate-800 px-4 py-3 md:grid-cols-[1fr_1fr_auto]">
+              <div className="grid gap-2 border-b border-slate-800 px-4 py-3 md:grid-cols-[1fr_1fr_1fr_auto]">
                 <select
                   value={reportFormat}
                   onChange={event => setReportFormat(event.target.value as 'csv' | 'json')}
@@ -536,6 +818,34 @@ export default function AnalyticsPage() {
                 >
                   <option value="csv">CSV export</option>
                   <option value="json">JSON export</option>
+                </select>
+                <select
+                  value={reportDataset}
+                  onChange={event =>
+                    setReportDataset(
+                      event.target.value as
+                        | 'EVENT_SUMMARY'
+                        | 'FULL_REGISTRATION_LIST'
+                        | 'APPROVED_LIST'
+                        | 'PENDING_LIST'
+                        | 'CHECKED_IN_LIST'
+                        | 'NO_SHOW_LIST'
+                        | 'CATEGORY_REPORT'
+                        | 'USHER_SCAN_REPORT'
+                        | 'COMMUNICATION_REPORT'
+                    )
+                  }
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+                >
+                  <option value="EVENT_SUMMARY">Event summary</option>
+                  <option value="FULL_REGISTRATION_LIST">Full registration list</option>
+                  <option value="APPROVED_LIST">Approved list</option>
+                  <option value="PENDING_LIST">Pending list</option>
+                  <option value="CHECKED_IN_LIST">Checked-in list</option>
+                  <option value="NO_SHOW_LIST">No-show list</option>
+                  <option value="CATEGORY_REPORT">Category report</option>
+                  <option value="USHER_SCAN_REPORT">Usher scan report</option>
+                  <option value="COMMUNICATION_REPORT">Communication log</option>
                 </select>
                 <select
                   value={reportEventId}
@@ -574,7 +884,7 @@ export default function AnalyticsPage() {
                 <ul>
                   {reports.map(report => (
                     <li key={report.reportId} className="border-t border-slate-800 px-4 py-3 text-sm">
-                      <div className="grid gap-2 md:grid-cols-[1.2fr_100px_120px_1fr_auto] md:items-center">
+                      <div className="grid gap-2 md:grid-cols-[1.2fr_120px_100px_120px_1fr_auto] md:items-center">
                         <div>
                           <p className="font-medium">{report.reportId.slice(0, 8)}...</p>
                           <p className="text-xs text-slate-400">
@@ -588,6 +898,7 @@ export default function AnalyticsPage() {
                             <p className="text-xs text-rose-300">Failure: {report.failureReason}</p>
                           ) : null}
                         </div>
+                        <p className="text-xs uppercase text-slate-300">{report.dataset.replace(/_/g, ' ')}</p>
                         <p className="text-xs uppercase text-slate-300">{report.format}</p>
                         <p className="text-xs text-cyan-300">{report.status}</p>
                         <p className="text-xs text-slate-300">

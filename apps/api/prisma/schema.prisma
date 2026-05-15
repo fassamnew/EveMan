@@ -72,6 +72,7 @@ enum AttendeeLifecycleStatus {
 enum CommunicationChannel {
   EMAIL
   SMS
+  WHATSAPP
 }
 
 enum CommunicationDeliveryStatus {
@@ -101,6 +102,8 @@ enum CheckinSource {
 
 enum CheckinSyncState {
   ACCEPTED
+  DUPLICATE
+  INVALID
   CONFLICT
 }
 
@@ -574,6 +577,7 @@ model Checkin {
   idempotencyKey String
   source         CheckinSource
   syncState      CheckinSyncState @default(ACCEPTED)
+  entrance       String?          // Checkpoint/entrance identifier (e.g., "Main Gate", "VIP Entrance")
   scannedAt      DateTime
   createdAt      DateTime         @default(now())
   organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -584,6 +588,7 @@ model Checkin {
   @@unique([organizationId, idempotencyKey])
   @@unique([eventId, registrantId])
   @@index([organizationId, createdAt])
+  @@index([entrance, createdAt])
   @@index([usherUserId, createdAt])
   @@map("checkins")
 }

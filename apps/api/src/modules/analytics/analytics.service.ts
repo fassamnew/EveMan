@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException
 } from '@nestjs/common';
-import { AuditOutcome, RoleName } from '@prisma/client';
+import { AuditOutcome, Prisma, RoleName } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { getSystemQueue } from '../../infra/queue/queue.provider';
 import {
@@ -26,6 +26,19 @@ type CacheEntry = {
 const CACHE_TTL_MS = 30_000;
 const TREND_DAYS = 7;
 const REPORT_LINK_TTL_SECONDS = 15 * 60;
+const REPORT_DATASETS = [
+  'EVENT_SUMMARY',
+  'FULL_REGISTRATION_LIST',
+  'APPROVED_LIST',
+  'PENDING_LIST',
+  'CHECKED_IN_LIST',
+  'NO_SHOW_LIST',
+  'CATEGORY_REPORT',
+  'USHER_SCAN_REPORT',
+  'COMMUNICATION_REPORT'
+] as const;
+
+type ReportDataset = (typeof REPORT_DATASETS)[number];
 
 @Injectable()
 export class AnalyticsService {
@@ -118,16 +131,29 @@ export class AnalyticsService {
     return Math.floor(parsed);
   }
 
+  private toReportDataset(value?: string): ReportDataset {
+    if (!value) {
+      return 'EVENT_SUMMARY';
+    }
+
+    const normalized = value.toUpperCase();
+    return REPORT_DATASETS.includes(normalized as ReportDataset)
+      ? (normalized as ReportDataset)
+      : 'EVENT_SUMMARY';
+  }
+
   async queueDashboardReport(input: {
     orgCode: string;
     eventId?: string;
     format?: string;
+    dataset?: string;
     req: RequestWithAuth;
   }) {
     this.assertExportAccess(input.orgCode, input.req);
     const org = await this.getOrg(input.orgCode);
     const reportId = randomUUID();
     const format = this.toFormat(input.format);
+    const dataset = this.toReportDataset(input.dataset);
 
     if (input.eventId) {
       const event = await this.prisma.event.findFirst({
@@ -151,7 +177,8 @@ export class AnalyticsService {
         organizationId: org.id,
         requestedByUserId: input.req.auth?.userId || null,
         format,
-        eventId: input.eventId
+        eventId: input.eventId,
+        dataset
       },
       {
         jobId: reportId,
@@ -175,7 +202,8 @@ export class AnalyticsService {
       ipAddress: this.getIp(input.req),
       metadataJson: {
         format,
-        eventId: input.eventId || null
+        eventId: input.eventId || null,
+        dataset
       }
     });
 
@@ -183,7 +211,8 @@ export class AnalyticsService {
       reportId,
       status: 'QUEUED',
       format,
-      eventId: input.eventId || null
+      eventId: input.eventId || null,
+      dataset
     };
   }
 
@@ -213,12 +242,14 @@ export class AnalyticsService {
           reportId: string;
           format: 'csv' | 'json';
           eventId?: string;
+          dataset?: ReportDataset;
         };
 
         return {
           reportId: data.reportId,
           status: state.toUpperCase(),
           format: data.format,
+          dataset: data.dataset || 'EVENT_SUMMARY',
           eventId: data.eventId || null,
           createdAt: job.timestamp ? new Date(job.timestamp).toISOString() : null,
           completedAt: job.finishedOn ? new Date(job.finishedOn).toISOString() : null,
@@ -292,7 +323,8 @@ export class AnalyticsService {
       ipAddress: this.getIp(input.req),
       metadataJson: {
         expiresInSeconds,
-        format: data.format || null
+        format: data.format || null,
+        dataset: (job.data as { dataset?: ReportDataset }).dataset || 'EVENT_SUMMARY'
       }
     });
 
@@ -595,6 +627,362 @@ export class AnalyticsService {
     return {
       ...payload,
       cached: false
+    };
+  }
+  async getCategoryBreakdown(orgCode: string, req: RequestWithAuth) {
+    this.assertReadAccess(orgCode, req);
+    const org = await this.getOrg(orgCode);
+
+    const data = await this.prisma.registrant.groupBy({
+      by: ['registrationLinkId'],
+      where: {
+        organizationId: org.id
+      },
+      _count: {
+        id: true
+      }
+    });
+
+    const linkIds = data.map(row => row.registrationLinkId).filter(Boolean);
+    const links = linkIds.length
+      ? await this.prisma.registrationLink.findMany({
+          where: {
+            id: {
+              in: linkIds
+            }
+          },
+          select: {
+            id: true,
+            title: true
+          }
+        })
+      : [];
+
+    const linkById = new Map(links.map(link => [link.id, link.title]));
+
+    return {
+      organization: {
+        id: org.id,
+        code: org.code,
+        name: org.name
+      },
+      breakdown: data.map(row => ({
+        category: linkById.get(row.registrationLinkId) || 'Unknown',
+        count: row._count.id
+      }))
+    };
+  }
+
+  async getLinkBreakdown(orgCode: string, req: RequestWithAuth) {
+    this.assertReadAccess(orgCode, req);
+    const org = await this.getOrg(orgCode);
+
+    const links = await this.prisma.registrationLink.findMany({
+      where: {
+        organizationId: org.id
+      },
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        eventId: true,
+        _count: {
+          select: {
+            registrants: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'asc'
+      }
+    });
+
+    const linkIds = links.map(link => link.id);
+    const acceptedCheckins =
+      linkIds.length > 0
+        ? await this.prisma.checkin.findMany({
+            where: {
+              organizationId: org.id,
+              syncState: 'ACCEPTED',
+              registrant: {
+                registrationLinkId: {
+                  in: linkIds
+                }
+              }
+            },
+            select: {
+              registrant: {
+                select: {
+                  registrationLinkId: true
+                }
+              }
+            }
+          })
+        : [];
+
+    const checkinsByLink = new Map<string, number>();
+    for (const row of acceptedCheckins) {
+      const linkId = row.registrant.registrationLinkId;
+      checkinsByLink.set(linkId, (checkinsByLink.get(linkId) || 0) + 1);
+    }
+
+    return {
+      organization: {
+        id: org.id,
+        code: org.code,
+        name: org.name
+      },
+      breakdown: links.map(link => ({
+        linkId: link.id,
+        slug: link.slug,
+        title: link.title,
+        eventId: link.eventId,
+        registrations: link._count.registrants,
+        checkins: checkinsByLink.get(link.id) || 0
+      }))
+    };
+  }
+
+  async getScanAttemptMetrics(orgCode: string, eventId?: string, req?: RequestWithAuth) {
+    if (req) {
+      this.assertReadAccess(orgCode, req);
+    }
+    const org = await this.getOrg(orgCode);
+
+    const where: Prisma.CheckinWhereInput = {
+      organizationId: org.id
+    };
+
+    if (eventId) {
+      where.eventId = eventId;
+    }
+
+    const bySyncState = await this.prisma.checkin.groupBy({
+      by: ['syncState'],
+      where,
+      _count: {
+        id: true
+      }
+    });
+
+    const byEntrance = await this.prisma.checkin.groupBy({
+      by: ['entrance'],
+      where: {
+        ...where,
+        entrance: {
+          not: null
+        }
+      },
+      _count: {
+        id: true
+      }
+    });
+
+    const duplicateAuditRows = await this.prisma.auditLog.findMany({
+      where: {
+        organizationId: org.id,
+        action: 'USHER_CHECKIN_DUPLICATE'
+      },
+      select: {
+        metadataJson: true
+      }
+    });
+
+    const invalidAuditRows = await this.prisma.auditLog.findMany({
+      where: {
+        organizationId: org.id,
+        action: 'USHER_CHECKIN_INVALID'
+      },
+      select: {
+        metadataJson: true
+      }
+    });
+
+    const getEventIdFromMetadata = (value: Prisma.JsonValue | null): string | null => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+      }
+      const eventIdValue = (value as Record<string, unknown>).eventId;
+      return typeof eventIdValue === 'string' ? eventIdValue : null;
+    };
+
+    const duplicateAttempts = eventId
+      ? duplicateAuditRows.filter(row => getEventIdFromMetadata(row.metadataJson) === eventId).length
+      : duplicateAuditRows.length;
+
+    const invalidAttempts = eventId
+      ? invalidAuditRows.filter(row => getEventIdFromMetadata(row.metadataJson) === eventId).length
+      : invalidAuditRows.length;
+
+    const acceptedCheckinsWithCategory = await this.prisma.checkin.findMany({
+      where: {
+        ...where,
+        syncState: 'ACCEPTED'
+      },
+      select: {
+        registrant: {
+          select: {
+            registrationLink: {
+              select: {
+                title: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    const byCategory: Record<string, number> = {};
+    for (const row of acceptedCheckinsWithCategory) {
+      const category = row.registrant.registrationLink.title || 'Unknown';
+      byCategory[category] = (byCategory[category] || 0) + 1;
+    }
+
+    const metrics = {
+      accepted: 0,
+      duplicate: 0,
+      invalid: 0,
+      conflict: 0,
+      byEntrance: {} as Record<string, number>,
+      byCategory
+    };
+
+    for (const row of bySyncState) {
+      if (row.syncState === 'ACCEPTED') {
+        metrics.accepted = row._count.id;
+      } else if (row.syncState === 'CONFLICT') {
+        metrics.conflict = row._count.id;
+      }
+    }
+
+    metrics.duplicate = duplicateAttempts;
+    metrics.invalid = invalidAttempts;
+
+    for (const row of byEntrance) {
+      const entrance = row.entrance || 'Unknown';
+      metrics.byEntrance[entrance] = row._count.id;
+    }
+
+    return {
+      organization: {
+        id: org.id,
+        code: org.code,
+        name: org.name
+      },
+      metrics,
+      eventId: eventId || null
+    };
+  }
+
+  async getLastScannedAttendees(orgCode: string, eventId?: string, limit: number = 20, req?: RequestWithAuth) {
+    if (req) {
+      this.assertReadAccess(orgCode, req);
+    }
+    const org = await this.getOrg(orgCode);
+
+    const where: Prisma.CheckinWhereInput = {
+      organizationId: org.id,
+      syncState: 'ACCEPTED'
+    };
+
+    if (eventId) {
+      where.eventId = eventId;
+    }
+
+    const checkins = await this.prisma.checkin.findMany({
+      where,
+      include: {
+        registrant: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            referenceCode: true
+          }
+        },
+        usherUser: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true
+          }
+        }
+      },
+      orderBy: {
+        scannedAt: 'desc'
+      },
+      take: limit
+    });
+
+    return {
+      organization: {
+        id: org.id,
+        code: org.code,
+        name: org.name
+      },
+      attendees: checkins.map(checkin => ({
+        attendeeId: checkin.registrant.id,
+        fullName: checkin.registrant.fullName,
+        email: checkin.registrant.email,
+        referenceCode: checkin.registrant.referenceCode,
+        checkinId: checkin.id,
+        scannedAt: checkin.scannedAt.toISOString(),
+        entrance: checkin.entrance || null,
+        usher: checkin.usherUser
+          ? {
+              id: checkin.usherUser.id,
+              name: [checkin.usherUser.firstName, checkin.usherUser.lastName].filter(Boolean).join(' ').trim()
+            }
+          : null
+      }))
+    };
+  }
+
+  async getNoShowAnalysis(orgCode: string, eventId?: string, req?: RequestWithAuth) {
+    if (req) {
+      this.assertReadAccess(orgCode, req);
+    }
+    const org = await this.getOrg(orgCode);
+
+    const where: Prisma.RegistrantWhereInput = {
+      organizationId: org.id,
+      lifecycleStatus: 'APPROVED'
+    };
+
+    if (eventId) {
+      where.eventId = eventId;
+    }
+
+    const approved = await this.prisma.registrant.count({ where });
+
+    const checkedInIds = await this.prisma.checkin.findMany({
+      where: {
+        organizationId: org.id,
+        syncState: 'ACCEPTED',
+        ...(eventId ? { eventId } : {})
+      },
+      select: {
+        registrantId: true
+      },
+      distinct: ['registrantId']
+    });
+
+    const checkedInSet = new Set(checkedInIds.map(row => row.registrantId));
+    const noShowCount = approved - checkedInSet.size;
+
+    return {
+      organization: {
+        id: org.id,
+        code: org.code,
+        name: org.name
+      },
+      analysis: {
+        approvedCount: approved,
+        checkedInCount: checkedInSet.size,
+        noShowCount: Math.max(0, noShowCount),
+        noShowRate: approved > 0 ? Number(((Math.max(0, noShowCount) / approved) * 100).toFixed(2)) : 0
+      },
+      eventId: eventId || null
     };
   }
 }

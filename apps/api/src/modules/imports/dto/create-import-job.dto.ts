@@ -11,8 +11,8 @@ export class CreateImportJobDto {
   @MinLength(1)
   sourceFilename!: string;
 
-  @IsIn(['CSV'])
-  sourceFileType!: 'CSV';
+  @IsIn(['CSV', 'XLSX'])
+  sourceFileType!: 'CSV' | 'XLSX';
 
   @IsIn(['SKIP', 'UPDATE', 'FLAG'])
   duplicateStrategy!: 'SKIP' | 'UPDATE' | 'FLAG';
@@ -21,15 +21,18 @@ export class CreateImportJobDto {
   mappingProfile!: {
     fullName: string;
     email: string;
+    phone?: string;
+    category?: string;
   };
 
   @IsString()
   @MinLength(1)
   eventId!: string;
 
+  @IsOptional()
   @IsString()
   @MinLength(1)
-  registrationLinkId!: string;
+  registrationLinkId?: string;
 
   @IsOptional()
   @IsArray()

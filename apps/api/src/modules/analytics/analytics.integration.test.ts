@@ -321,6 +321,182 @@ describe.skipIf(!runIntegration)('Analytics dashboard integration (MySQL)', () =
     expect(second.body.cached).toBe(true);
   });
 
+  it('returns category breakdown, scan metrics, last scanned attendees, and no-show analysis', async () => {
+    const org = await prisma.organization.create({ data: { name: 'Section15 Org', code: 'section15org' } });
+
+    await createOrgUser({
+      email: 'admin@section15.org',
+      password: 'StrongPass123!',
+      orgId: org.id,
+      roleName: 'ORG_ADMIN'
+    });
+
+    const usher = await createOrgUser({
+      email: 'usher@section15.org',
+      password: 'StrongPass123!',
+      orgId: org.id,
+      roleName: 'ORG_STAFF',
+      firstName: 'Door',
+      lastName: 'Agent'
+    });
+
+    const auth = await loginOrgUser({
+      email: 'admin@section15.org',
+      password: 'StrongPass123!',
+      orgId: org.id
+    });
+
+    const event = await prisma.event.create({
+      data: {
+        organizationId: org.id,
+        name: 'Section 15 Event',
+        status: 'PUBLISHED'
+      }
+    });
+
+    const vipLink = await prisma.registrationLink.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        slug: 'vip-section15',
+        title: 'VIP'
+      }
+    });
+
+    const generalLink = await prisma.registrationLink.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        slug: 'general-section15',
+        title: 'General'
+      }
+    });
+
+    const approvedCheckedIn = await prisma.registrant.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        registrationLinkId: vipLink.id,
+        referenceCode: 'S15001',
+        email: 'checkedin@section15.org',
+        fullName: 'Checked In Attendee',
+        lifecycleStatus: 'APPROVED',
+        consentAccepted: true,
+        consentPolicyVersion: 'v1',
+        consentCapturedAt: new Date()
+      }
+    });
+
+    await prisma.registrant.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        registrationLinkId: generalLink.id,
+        referenceCode: 'S15002',
+        email: 'noshow@section15.org',
+        fullName: 'No Show Attendee',
+        lifecycleStatus: 'APPROVED',
+        consentAccepted: true,
+        consentPolicyVersion: 'v1',
+        consentCapturedAt: new Date()
+      }
+    });
+
+    const scannedAt = new Date();
+    await prisma.checkin.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        registrantId: approvedCheckedIn.id,
+        usherUserId: usher.id,
+        deviceId: 'gate-device-1',
+        idempotencyKey: 'section15-checkin-1',
+        source: 'MOBILE_ONLINE',
+        syncState: 'ACCEPTED',
+        entrance: 'Main Gate',
+        scannedAt
+      }
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        actorUserId: usher.id,
+        organizationId: org.id,
+        action: 'USHER_CHECKIN_DUPLICATE',
+        targetType: 'REGISTRANT',
+        targetId: approvedCheckedIn.id,
+        outcome: 'FAILURE',
+        metadataJson: {
+          eventId: event.id,
+          reason: 'DUPLICATE'
+        }
+      }
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        actorUserId: usher.id,
+        organizationId: org.id,
+        action: 'USHER_CHECKIN_INVALID',
+        targetType: 'CHECKIN',
+        targetId: null,
+        outcome: 'FAILURE',
+        metadataJson: {
+          eventId: event.id,
+          reason: 'TOKEN_SIGNATURE_INVALID'
+        }
+      }
+    });
+
+    const categoryRes = await request(app.getHttpServer())
+      .get('/org/section15org/analytics/category-breakdown')
+      .set('Authorization', `Bearer ${auth.accessToken}`);
+
+    expect(categoryRes.status).toBe(200);
+    expect(Array.isArray(categoryRes.body.breakdown)).toBe(true);
+    expect(categoryRes.body.breakdown.find((row: { category: string }) => row.category === 'VIP')).toBeTruthy();
+
+    const scanMetricsRes = await request(app.getHttpServer())
+      .get('/org/section15org/analytics/scan-metrics')
+      .set('Authorization', `Bearer ${auth.accessToken}`);
+
+    expect(scanMetricsRes.status).toBe(200);
+    expect(scanMetricsRes.body.metrics.accepted).toBe(1);
+    expect(scanMetricsRes.body.metrics.duplicate).toBe(1);
+    expect(scanMetricsRes.body.metrics.invalid).toBe(1);
+    expect(scanMetricsRes.body.metrics.byEntrance['Main Gate']).toBe(1);
+    expect(scanMetricsRes.body.metrics.byCategory['VIP']).toBe(1);
+
+    const linkBreakdownRes = await request(app.getHttpServer())
+      .get('/org/section15org/analytics/link-breakdown')
+      .set('Authorization', `Bearer ${auth.accessToken}`);
+
+    expect(linkBreakdownRes.status).toBe(200);
+    expect(Array.isArray(linkBreakdownRes.body.breakdown)).toBe(true);
+    const vipLinkBreakdown = linkBreakdownRes.body.breakdown.find((row: { title: string }) => row.title === 'VIP');
+    expect(vipLinkBreakdown).toBeTruthy();
+    expect(vipLinkBreakdown.registrations).toBe(1);
+    expect(vipLinkBreakdown.checkins).toBe(1);
+
+    const lastScannedRes = await request(app.getHttpServer())
+      .get('/org/section15org/analytics/last-scanned?limit=5')
+      .set('Authorization', `Bearer ${auth.accessToken}`);
+
+    expect(lastScannedRes.status).toBe(200);
+    expect(lastScannedRes.body.attendees.length).toBe(1);
+    expect(lastScannedRes.body.attendees[0].fullName).toBe('Checked In Attendee');
+    expect(lastScannedRes.body.attendees[0].entrance).toBe('Main Gate');
+
+    const noShowRes = await request(app.getHttpServer())
+      .get('/org/section15org/analytics/no-show')
+      .set('Authorization', `Bearer ${auth.accessToken}`);
+
+    expect(noShowRes.status).toBe(200);
+    expect(noShowRes.body.analysis.approvedCount).toBe(2);
+    expect(noShowRes.body.analysis.checkedInCount).toBe(1);
+    expect(noShowRes.body.analysis.noShowCount).toBe(1);
+  });
+
   it('requires auth for dashboard endpoint', async () => {
     const org = await prisma.organization.create({ data: { name: 'Auth Org', code: 'authorg' } });
     expect(org.id).toBeTruthy();
@@ -346,12 +522,13 @@ describe.skipIf(!runIntegration)('Analytics dashboard integration (MySQL)', () =
     });
 
     const queued = await request(app.getHttpServer())
-      .post('/org/reportorg/dashboard/reports?format=csv')
+      .post('/org/reportorg/dashboard/reports?format=csv&dataset=NO_SHOW_LIST')
       .set('Authorization', `Bearer ${auth.accessToken}`);
 
     expect(queued.status).toBe(201);
     expect(queued.body.reportId).toBeTruthy();
     expect(queued.body.status).toBe('QUEUED');
+    expect(queued.body.dataset).toBe('NO_SHOW_LIST');
 
     const listed = await request(app.getHttpServer())
       .get('/org/reportorg/dashboard/reports')
@@ -359,9 +536,11 @@ describe.skipIf(!runIntegration)('Analytics dashboard integration (MySQL)', () =
 
     expect(listed.status).toBe(200);
     expect(Array.isArray(listed.body.reports)).toBe(true);
-    expect(listed.body.reports.some((item: { reportId: string }) => item.reportId === queued.body.reportId)).toBe(
-      true
+    const queuedItem = listed.body.reports.find(
+      (item: { reportId: string; dataset: string }) => item.reportId === queued.body.reportId
     );
+    expect(queuedItem).toBeTruthy();
+    expect(queuedItem.dataset).toBe('NO_SHOW_LIST');
   });
 
   it('forbids org staff from queueing export reports', async () => {

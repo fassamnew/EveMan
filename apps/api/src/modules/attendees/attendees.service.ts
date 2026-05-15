@@ -13,6 +13,7 @@ import { BadgeQrService } from '../badges/badge-qr.service';
 import { AuditService } from '../common/audit.service';
 import { PolicyService } from '../common/policy.service';
 import type { RequestWithAuth } from '../common/request-with-auth';
+import { CommunicationsService } from '../communications/communications.service';
 import type { ListAttendeesDto } from './dto/list-attendees.dto';
 import type { UpdateAttendeeDto } from './dto/update-attendee.dto';
 import type { ListAttendeeCommunicationsDto } from './dto/list-attendee-communications.dto';
@@ -24,7 +25,8 @@ export class AttendeesService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(PolicyService) private readonly policy: PolicyService,
-    @Inject(BadgeQrService) private readonly badgeQrService: BadgeQrService
+    @Inject(BadgeQrService) private readonly badgeQrService: BadgeQrService,
+    @Inject(CommunicationsService) private readonly communicationsService: CommunicationsService
   ) {}
 
   private normalizeEmail(email: string): string {
@@ -391,6 +393,32 @@ export class AttendeesService {
       }
     }
 
+    if (updated.lifecycleStatus === AttendeeLifecycleStatus.APPROVED) {
+      await this.communicationsService.queueAutomatedMessage({
+        organizationId: org.id,
+        registrantId: registrant.id,
+        recipientAddress: registrant.email,
+        messageType: 'APPROVAL_CONFIRMATION',
+        metadata: {
+          source: 'attendee.lifecycle.approve',
+          approvedByUserId: input.req.auth?.userId || null
+        }
+      });
+    }
+
+    if (updated.lifecycleStatus === AttendeeLifecycleStatus.REJECTED) {
+      await this.communicationsService.queueAutomatedMessage({
+        organizationId: org.id,
+        registrantId: registrant.id,
+        recipientAddress: registrant.email,
+        messageType: 'REJECTION_MESSAGE',
+        metadata: {
+          source: 'attendee.lifecycle.reject',
+          rejectedByUserId: input.req.auth?.userId || null
+        }
+      });
+    }
+
     return {
       id: updated.id,
       lifecycleStatus: updated.lifecycleStatus,
@@ -565,6 +593,17 @@ export class AttendeesService {
       targetId: registrant.id,
       outcome: AuditOutcome.SUCCESS,
       ipAddress: this.getIp(input.req)
+    });
+
+    await this.communicationsService.queueAutomatedMessage({
+      organizationId: org.id,
+      registrantId: registrant.id,
+      recipientAddress: registrant.email,
+      messageType: 'REJECTION_MESSAGE',
+      metadata: {
+        source: 'attendee.lifecycle.cancel',
+        cancelledByUserId: input.req.auth?.userId || null
+      }
     });
 
     return {

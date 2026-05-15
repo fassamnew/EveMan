@@ -14,6 +14,11 @@ import type { RequestWithAuth } from '../common/request-with-auth';
 import type { CreateBulkSendDto } from './dto/create-bulk-send.dto';
 import type { CreateCommunicationTemplateDto } from './dto/create-communication-template.dto';
 import type { UpdateCommunicationTemplateDto } from './dto/update-communication-template.dto';
+import {
+  getTemplateTypeKey,
+  TEMPLATE_TYPE_KEY_PREFIX,
+  type CommunicationMessageType
+} from './communication-message-types';
 
 @Injectable()
 export class CommunicationsService {
@@ -52,6 +57,182 @@ export class CommunicationsService {
     return org;
   }
 
+  private parseTemplateType(value: string): CommunicationMessageType | null {
+    return value ? (value as CommunicationMessageType) : null;
+  }
+
+  private async getTemplateType(templateId: string): Promise<CommunicationMessageType | null> {
+    const row = await this.prisma.migrationMetadata.findUnique({
+      where: {
+        key: getTemplateTypeKey(templateId)
+      },
+      select: {
+        value: true
+      }
+    });
+
+    return row ? this.parseTemplateType(row.value) : null;
+  }
+
+  private async getTemplateTypeMap(templateIds: string[]): Promise<Map<string, CommunicationMessageType>> {
+    if (templateIds.length === 0) {
+      return new Map();
+    }
+
+    const rows = await this.prisma.migrationMetadata.findMany({
+      where: {
+        key: {
+          in: templateIds.map(id => getTemplateTypeKey(id))
+        }
+      },
+      select: {
+        key: true,
+        value: true
+      }
+    });
+
+    const map = new Map<string, CommunicationMessageType>();
+    for (const row of rows) {
+      const templateId = row.key.replace(TEMPLATE_TYPE_KEY_PREFIX, '');
+      const parsed = this.parseTemplateType(row.value);
+      if (parsed) {
+        map.set(templateId, parsed);
+      }
+    }
+
+    return map;
+  }
+
+  private async setTemplateType(templateId: string, messageType?: CommunicationMessageType): Promise<void> {
+    const key = getTemplateTypeKey(templateId);
+
+    if (!messageType) {
+      await this.prisma.migrationMetadata.deleteMany({ where: { key } });
+      return;
+    }
+
+    await this.prisma.migrationMetadata.upsert({
+      where: { key },
+      update: { value: messageType },
+      create: {
+        key,
+        value: messageType
+      }
+    });
+  }
+
+  private extractSmsAddress(input: Array<{ fieldKey: string; valueText: string }>): string | null {
+    const preferredKeys = ['phone', 'mobile', 'phone_number', 'phoneNumber', 'msisdn'];
+
+    for (const key of preferredKeys) {
+      const row = input.find(item => item.fieldKey === key && item.valueText?.trim().length > 0);
+      if (row) {
+        return row.valueText.trim();
+      }
+    }
+
+    return null;
+  }
+
+  private async findTemplateByMessageType(input: {
+    organizationId: string;
+    messageType: CommunicationMessageType;
+    channel: CommunicationChannel;
+  }) {
+    const rows = await this.prisma.migrationMetadata.findMany({
+      where: {
+        key: {
+          startsWith: TEMPLATE_TYPE_KEY_PREFIX
+        },
+        value: input.messageType
+      },
+      select: {
+        key: true
+      }
+    });
+
+    const candidateIds = rows.map(row => row.key.replace(TEMPLATE_TYPE_KEY_PREFIX, ''));
+    if (candidateIds.length === 0) {
+      return null;
+    }
+
+    return this.prisma.communicationTemplate.findFirst({
+      where: {
+        id: {
+          in: candidateIds
+        },
+        organizationId: input.organizationId,
+        channel: input.channel,
+        isActive: true
+      },
+      orderBy: {
+        updatedAt: 'desc'
+      }
+    });
+  }
+
+  async queueAutomatedMessage(input: {
+    organizationId: string;
+    registrantId: string;
+    recipientAddress: string;
+    messageType: CommunicationMessageType;
+    metadata?: Record<string, unknown>;
+  }): Promise<{ queued: boolean; communicationLogId: string | null; templateId: string | null }> {
+    const recipient = input.recipientAddress.trim();
+    if (!recipient) {
+      return {
+        queued: false,
+        communicationLogId: null,
+        templateId: null
+      };
+    }
+
+    const template = await this.findTemplateByMessageType({
+      organizationId: input.organizationId,
+      messageType: input.messageType,
+      channel: CommunicationChannel.EMAIL
+    });
+
+    const log = await this.prisma.communicationLog.create({
+      data: {
+        organizationId: input.organizationId,
+        registrantId: input.registrantId,
+        templateId: template?.id || null,
+        channel: CommunicationChannel.EMAIL,
+        status: CommunicationDeliveryStatus.QUEUED,
+        senderUserId: null,
+        recipientAddress: recipient,
+        metadataJson: {
+          messageType: input.messageType,
+          ...(input.metadata || {})
+        }
+      }
+    });
+
+    const queue = getSystemQueue();
+    await queue.add(
+      'communication.send',
+      {
+        communicationLogId: log.id
+      },
+      {
+        attempts: 3,
+        backoff: {
+          type: 'exponential',
+          delay: 1000
+        },
+        removeOnComplete: 100,
+        removeOnFail: 100
+      }
+    );
+
+    return {
+      queued: true,
+      communicationLogId: log.id,
+      templateId: template?.id || null
+    };
+  }
+
   async createTemplate(input: {
     orgCode: string;
     dto: CreateCommunicationTemplateDto;
@@ -72,6 +253,8 @@ export class CommunicationsService {
       }
     });
 
+    await this.setTemplateType(created.id, input.dto.messageType);
+
     await this.audit.write({
       actorUserId: input.req.auth?.userId || null,
       organizationId: org.id,
@@ -82,14 +265,17 @@ export class CommunicationsService {
       ipAddress: this.getIp(input.req)
     });
 
-    return created;
+    return {
+      ...created,
+      messageType: input.dto.messageType || null
+    };
   }
 
   async listTemplates(input: { orgCode: string; req: RequestWithAuth }) {
     this.assertReadAccess(input.orgCode, input.req);
     const org = await this.getOrg(input.orgCode);
 
-    return this.prisma.communicationTemplate.findMany({
+    const templates = await this.prisma.communicationTemplate.findMany({
       where: {
         organizationId: org.id
       },
@@ -97,6 +283,13 @@ export class CommunicationsService {
         updatedAt: 'desc'
       }
     });
+
+    const typeMap = await this.getTemplateTypeMap(templates.map(item => item.id));
+
+    return templates.map(item => ({
+      ...item,
+      messageType: typeMap.get(item.id) || null
+    }));
   }
 
   async updateTemplate(input: {
@@ -132,6 +325,12 @@ export class CommunicationsService {
       }
     });
 
+    if (Object.prototype.hasOwnProperty.call(input.dto, 'messageType')) {
+      await this.setTemplateType(updated.id, input.dto.messageType);
+    }
+
+    const messageType = await this.getTemplateType(updated.id);
+
     await this.audit.write({
       actorUserId: input.req.auth?.userId || null,
       organizationId: org.id,
@@ -142,7 +341,10 @@ export class CommunicationsService {
       ipAddress: this.getIp(input.req)
     });
 
-    return updated;
+    return {
+      ...updated,
+      messageType
+    };
   }
 
   async bulkSend(input: {
@@ -176,6 +378,8 @@ export class CommunicationsService {
       throw new NotFoundException('Communication template not found');
     }
 
+    const templateType = await this.getTemplateType(template.id);
+
     const attendees = await this.prisma.registrant.findMany({
       where: {
         organizationId: org.id,
@@ -188,14 +392,36 @@ export class CommunicationsService {
       },
       select: {
         id: true,
-        email: true
+        email: true,
+        responses: {
+          where: {
+            fieldKey: {
+              in: ['phone', 'mobile', 'phone_number', 'phoneNumber', 'msisdn']
+            }
+          },
+          select: {
+            fieldKey: true,
+            valueText: true
+          }
+        }
       }
     });
 
     const queue = getSystemQueue();
     const jobs = [] as string[];
+    let skipped = 0;
 
     for (const attendee of attendees) {
+      const recipientAddress =
+        template.channel === CommunicationChannel.EMAIL
+          ? attendee.email
+          : this.extractSmsAddress(attendee.responses || []);
+
+      if (!recipientAddress) {
+        skipped += 1;
+        continue;
+      }
+
       const log = await this.prisma.communicationLog.create({
         data: {
           organizationId: org.id,
@@ -204,10 +430,11 @@ export class CommunicationsService {
           channel: template.channel,
           status: CommunicationDeliveryStatus.QUEUED,
           senderUserId: input.req.auth?.userId || null,
-          recipientAddress: template.channel === 'EMAIL' ? attendee.email : attendee.email,
+          recipientAddress,
           metadataJson: {
             templateName: template.name,
-            scheduledFor: scheduledAt?.toISOString() || null
+            scheduledFor: scheduledAt?.toISOString() || null,
+            messageType: templateType
           }
         }
       });
@@ -241,13 +468,15 @@ export class CommunicationsService {
       outcome: AuditOutcome.SUCCESS,
       ipAddress: this.getIp(input.req),
       metadataJson: {
-        queued: jobs.length
+        queued: jobs.length,
+        skipped
       }
     });
 
     return {
       templateId: template.id,
       queued: jobs.length,
+      skipped,
       scheduledFor: scheduledAt?.toISOString() || null
     };
   }

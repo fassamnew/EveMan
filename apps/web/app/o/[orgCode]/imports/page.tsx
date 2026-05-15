@@ -54,6 +54,9 @@ export default function ImportsPage() {
   const [registrationLinkId, setRegistrationLinkId] = useState('');
   const [mappingFullName, setMappingFullName] = useState('name');
   const [mappingEmail, setMappingEmail] = useState('email');
+  const [mappingPhone, setMappingPhone] = useState('phone');
+  const [mappingCategory, setMappingCategory] = useState('category');
+  const [useCategoryMapping, setUseCategoryMapping] = useState(false);
   const [fileContentBase64, setFileContentBase64] = useState('');
   const [selectedFilename, setSelectedFilename] = useState('');
 
@@ -145,6 +148,16 @@ export default function ImportsPage() {
       return;
     }
 
+    if (useCategoryMapping && !mappingCategory.trim()) {
+      setError('Provide a category column name when category mapping is enabled');
+      return;
+    }
+
+    if (!useCategoryMapping && !registrationLinkId) {
+      setError('Select a registration link or enable category mapping');
+      return;
+    }
+
     setError(null);
 
     const response = await authFetch(`${API_BASE}/org/${orgCode}/imports/jobs`, {
@@ -158,10 +171,12 @@ export default function ImportsPage() {
         duplicateStrategy,
         mappingProfile: {
           fullName: mappingFullName,
-          email: mappingEmail
+          email: mappingEmail,
+          phone: mappingPhone.trim() || undefined,
+          category: useCategoryMapping ? mappingCategory.trim() : undefined
         },
         eventId,
-        registrationLinkId,
+        registrationLinkId: useCategoryMapping ? undefined : registrationLinkId || undefined,
         fileContentBase64
       })
     }, onSessionExpired);
@@ -278,6 +293,7 @@ export default function ImportsPage() {
           <select
             value={registrationLinkId}
             onChange={event => setRegistrationLinkId(event.target.value)}
+            disabled={useCategoryMapping}
             className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
           >
             {links.map(item => (
@@ -287,7 +303,7 @@ export default function ImportsPage() {
             ))}
           </select>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:col-span-2">
             <input
               value={mappingFullName}
               onChange={event => setMappingFullName(event.target.value)}
@@ -302,7 +318,35 @@ export default function ImportsPage() {
               placeholder="email column"
               className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
             />
+            <input
+              value={mappingPhone}
+              onChange={event => setMappingPhone(event.target.value)}
+              placeholder="phone column (optional)"
+              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+            />
+            <input
+              value={mappingCategory}
+              onChange={event => setMappingCategory(event.target.value)}
+              required={useCategoryMapping}
+              placeholder="category column"
+              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+            />
           </div>
+
+          <label className="md:col-span-2 flex items-center gap-2 text-sm text-slate-300">
+            <input
+              type="checkbox"
+              checked={useCategoryMapping}
+              onChange={event => setUseCategoryMapping(event.target.checked)}
+            />
+            Match registration link from category column (title, slug, or link id)
+          </label>
+
+          {useCategoryMapping ? (
+            <p className="md:col-span-2 text-xs text-slate-400">
+              Default link is disabled while category mapping is active.
+            </p>
+          ) : null}
 
           <div className="md:col-span-2 rounded-lg border border-cyan-700/40 bg-cyan-950/20 px-3 py-3 text-sm">
             <p className="font-semibold text-cyan-200">CSV format guide</p>
@@ -317,11 +361,17 @@ export default function ImportsPage() {
               <span className="ml-2 rounded bg-slate-900 px-2 py-0.5 font-mono text-xs text-cyan-200">
                 {mappingEmail || 'email'}
               </span>
+              <span className="ml-2 rounded bg-slate-900 px-2 py-0.5 font-mono text-xs text-cyan-200">
+                {mappingPhone || 'phone'}
+              </span>
+              <span className="ml-2 rounded bg-slate-900 px-2 py-0.5 font-mono text-xs text-cyan-200">
+                {mappingCategory || 'category'}
+              </span>
             </p>
             <div className="mt-3 overflow-x-auto rounded border border-slate-700 bg-slate-950/80 p-3 font-mono text-xs text-slate-200">
-              <p>{`${mappingFullName || 'name'},${mappingEmail || 'email'}`}</p>
-              <p>Abel Tesfaye,abel@example.com</p>
-              <p>Sara Demissie,sara@example.com</p>
+              <p>{`${mappingFullName || 'name'},${mappingEmail || 'email'},${mappingPhone || 'phone'},${mappingCategory || 'category'}`}</p>
+              <p>Abel Tesfaye,abel@example.com,+251900000000,vip</p>
+              <p>Sara Demissie,sara@example.com,+251911111111,standard</p>
             </div>
             <p className="mt-2 text-xs text-slate-400">
               For XLSX files, use the same header names in the first row.

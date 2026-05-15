@@ -222,6 +222,23 @@ export class UsherService {
   async createCheckin(input: { dto: CreateCheckinDto; req: RequestWithAuth }) {
     const auth = this.requireUsherAccess(input.req);
 
+    const writeInvalidAudit = async (reason: string, metadata?: Record<string, unknown>) => {
+      await this.audit.write({
+        actorUserId: auth.userId,
+        organizationId: auth.organizationId,
+        action: 'USHER_CHECKIN_INVALID',
+        targetType: 'CHECKIN',
+        targetId: null,
+        outcome: AuditOutcome.FAILURE,
+        ipAddress: this.getIp(input.req),
+        metadataJson: {
+          reason,
+          idempotencyKey: input.dto.idempotencyKey,
+          ...(metadata || {})
+        } as Prisma.InputJsonValue
+      });
+    };
+
     const existingByKey = await this.prisma.checkin.findUnique({
       where: {
         organizationId_idempotencyKey: {
@@ -244,10 +261,12 @@ export class UsherService {
     try {
       decoded = jwt.verify(input.dto.token, this.getQrSecret()) as QrPayload;
     } catch {
+      await writeInvalidAudit('TOKEN_SIGNATURE_INVALID');
       throw new BadRequestException({ status: 'INVALID', reason: 'TOKEN_SIGNATURE_INVALID' });
     }
 
     if (!decoded.jti || !decoded.r || !decoded.e || !decoded.o) {
+      await writeInvalidAudit('TOKEN_PAYLOAD_INVALID');
       throw new BadRequestException({ status: 'INVALID', reason: 'TOKEN_PAYLOAD_INVALID' });
     }
 
@@ -293,14 +312,26 @@ export class UsherService {
     });
 
     if (!qr || qr.tokenHash !== tokenHash) {
+      await writeInvalidAudit('TOKEN_NOT_FOUND', {
+        eventId: decoded.e || null,
+        registrantId: decoded.r || null
+      });
       throw new BadRequestException({ status: 'INVALID', reason: 'TOKEN_NOT_FOUND' });
     }
 
     if (qr.status === 'REVOKED' || qr.status === 'EXPIRED') {
+      await writeInvalidAudit('TOKEN_INACTIVE', {
+        eventId: qr.registrant.eventId,
+        registrantId: qr.registrant.id
+      });
       throw new BadRequestException({ status: 'INVALID', reason: 'TOKEN_INACTIVE' });
     }
 
     if (qr.expiresAt && qr.expiresAt.getTime() < Date.now()) {
+      await writeInvalidAudit('TOKEN_EXPIRED', {
+        eventId: qr.registrant.eventId,
+        registrantId: qr.registrant.id
+      });
       throw new BadRequestException({ status: 'INVALID', reason: 'TOKEN_EXPIRED' });
     }
 
@@ -437,6 +468,7 @@ export class UsherService {
         idempotencyKey: input.dto.idempotencyKey,
         source: (persistedSource || 'MOBILE_ONLINE') as CheckinSource,
         syncState: 'ACCEPTED',
+        entrance: input.dto.entrance || null,
         scannedAt
       }
     });

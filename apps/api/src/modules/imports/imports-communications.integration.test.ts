@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import type { INestApplication } from '@nestjs/common';
 import { RoleName } from '@prisma/client';
+import { utils as xlsxUtils, write as writeXlsx } from 'xlsx';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../infra/db/prisma.service';
 import { PasswordService } from '../common/password.service';
@@ -390,6 +391,147 @@ describe.skipIf(!runIntegration)('Phase 5 imports and communications integration
     expect(listLogsRes.status).toBe(200);
     expect((listLogsRes.body as Array<{ id: string }>).length).toBeGreaterThanOrEqual(2);
   });
+
+  it('processes XLSX imports with category mapping and phone field capture', async () => {
+    const org = await prisma.organization.create({ data: { name: 'XLSX Org', code: 'xlsxorg' } });
+
+    await createOrgUser({
+      email: 'admin@xlsxorg.com',
+      password: 'StrongPass123!',
+      orgId: org.id,
+      roleName: 'ORG_ADMIN'
+    });
+
+    const auth = await loginOrgUser({
+      email: 'admin@xlsxorg.com',
+      password: 'StrongPass123!',
+      orgId: org.id
+    });
+
+    const event = await prisma.event.create({
+      data: {
+        organizationId: org.id,
+        name: 'XLSX Import Event',
+        status: 'PUBLISHED'
+      }
+    });
+
+    const vipLink = await prisma.registrationLink.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        slug: 'vip',
+        title: 'VIP'
+      }
+    });
+
+    const standardLink = await prisma.registrationLink.create({
+      data: {
+        organizationId: org.id,
+        eventId: event.id,
+        slug: 'standard',
+        title: 'Standard'
+      }
+    });
+
+    const workbook = xlsxUtils.book_new();
+    const worksheet = xlsxUtils.json_to_sheet([
+      { name: 'VIP Attendee', email: 'vip@xlsx.com', category: 'VIP', phone: '+251900000001' },
+      { name: 'Standard Attendee', email: 'standard@xlsx.com', category: 'standard', phone: '+251900000002' },
+      { name: 'Unknown Category', email: 'unknown@xlsx.com', category: 'missing', phone: '+251900000003' }
+    ]);
+    xlsxUtils.book_append_sheet(workbook, worksheet, 'Import');
+    const fileContentBase64 = writeXlsx(workbook, { type: 'base64', bookType: 'xlsx' });
+
+    const importRes = await request(app.getHttpServer())
+      .post(`/org/${org.code}/imports/jobs`)
+      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .send({
+        sourceFilename: 'attendees.xlsx',
+        sourceFileType: 'XLSX',
+        duplicateStrategy: 'FLAG',
+        mappingProfile: {
+          fullName: 'name',
+          email: 'email',
+          phone: 'phone',
+          category: 'category'
+        },
+        eventId: event.id,
+        fileContentBase64
+      });
+
+    expect(importRes.status).toBe(201);
+
+    let terminalJobState: {
+      status: string;
+      successfulRows: number | null;
+      failedRows: number | null;
+    } | null = null;
+    for (let i = 0; i < 40; i += 1) {
+      const job = await prisma.importJob.findUnique({
+        where: { id: importRes.body.jobId as string },
+        select: {
+          status: true,
+          successfulRows: true,
+          failedRows: true
+        }
+      });
+
+      if (job?.status === 'FAILED' || job?.status === 'COMPLETED') {
+        terminalJobState = job;
+        break;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    expect(terminalJobState).toBeTruthy();
+    expect(terminalJobState?.successfulRows).toBe(2);
+    expect(terminalJobState?.failedRows).toBe(1);
+
+    const vipRegistrant = await prisma.registrant.findFirst({
+      where: {
+        organizationId: org.id,
+        eventId: event.id,
+        email: 'vip@xlsx.com'
+      },
+      select: {
+        id: true,
+        registrationLinkId: true
+      }
+    });
+    expect(vipRegistrant?.registrationLinkId).toBe(vipLink.id);
+
+    const standardRegistrant = await prisma.registrant.findFirst({
+      where: {
+        organizationId: org.id,
+        eventId: event.id,
+        email: 'standard@xlsx.com'
+      },
+      select: {
+        id: true,
+        registrationLinkId: true
+      }
+    });
+    expect(standardRegistrant?.registrationLinkId).toBe(standardLink.id);
+
+    const vipPhone = await prisma.registrantResponse.findUnique({
+      where: {
+        registrantId_fieldKey: {
+          registrantId: vipRegistrant!.id,
+          fieldKey: 'phone'
+        }
+      }
+    });
+    expect(vipPhone?.valueText).toBe('+251900000001');
+
+    const errorsRes = await request(app.getHttpServer())
+      .get(`/org/${org.code}/imports/jobs/${importRes.body.jobId as string}/errors`)
+      .set('Authorization', `Bearer ${auth.accessToken}`);
+
+    expect(errorsRes.status).toBe(200);
+    expect((errorsRes.body as Array<{ id: string }>).length).toBe(1);
+  }, 15000);
 
   it('supports scheduled bulk communications delivery', async () => {
     const org = await prisma.organization.create({ data: { name: 'Scheduled Org', code: 'schedorg' } });

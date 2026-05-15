@@ -31,12 +31,14 @@ export class AnalyticsController {
     @Param('orgCode') orgCode: string,
     @Query('eventId') eventId: string | undefined,
     @Query('format') format: string | undefined,
+    @Query('dataset') dataset: string | undefined,
     @Req() req: RequestWithAuth
   ) {
     return this.analyticsService.queueDashboardReport({
       orgCode,
       eventId,
       format,
+      dataset,
       req
     });
   }
@@ -61,6 +63,50 @@ export class AnalyticsController {
       expiresInSeconds,
       req
     });
+  }
+
+  @UseGuards(AccessTokenGuard, OrgAccessGuard)
+  @Get('org/:orgCode/analytics/category-breakdown')
+  async getCategoryBreakdown(@Param('orgCode') orgCode: string, @Req() req: RequestWithAuth) {
+    return this.analyticsService.getCategoryBreakdown(orgCode, req);
+  }
+
+  @UseGuards(AccessTokenGuard, OrgAccessGuard)
+  @Get('org/:orgCode/analytics/link-breakdown')
+  async getLinkBreakdown(@Param('orgCode') orgCode: string, @Req() req: RequestWithAuth) {
+    return this.analyticsService.getLinkBreakdown(orgCode, req);
+  }
+
+  @UseGuards(AccessTokenGuard, OrgAccessGuard)
+  @Get('org/:orgCode/analytics/scan-metrics')
+  async getScanMetrics(
+    @Param('orgCode') orgCode: string,
+    @Query('eventId') eventId: string | undefined,
+    @Req() req: RequestWithAuth
+  ) {
+    return this.analyticsService.getScanAttemptMetrics(orgCode, eventId, req);
+  }
+
+  @UseGuards(AccessTokenGuard, OrgAccessGuard)
+  @Get('org/:orgCode/analytics/last-scanned')
+  async getLastScanned(
+    @Param('orgCode') orgCode: string,
+    @Query('eventId') eventId: string | undefined,
+    @Query('limit') limit: string | undefined,
+    @Req() req: RequestWithAuth
+  ) {
+    const parsedLimit = limit ? Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100) : 20;
+    return this.analyticsService.getLastScannedAttendees(orgCode, eventId, parsedLimit, req);
+  }
+
+  @UseGuards(AccessTokenGuard, OrgAccessGuard)
+  @Get('org/:orgCode/analytics/no-show')
+  async getNoShow(
+    @Param('orgCode') orgCode: string,
+    @Query('eventId') eventId: string | undefined,
+    @Req() req: RequestWithAuth
+  ) {
+    return this.analyticsService.getNoShowAnalysis(orgCode, eventId, req);
   }
 
   @Get('public/reports/download')

@@ -35,13 +35,14 @@ describe('AnalyticsController', () => {
       }
     } as any;
 
-    const result = await controller.queueReport('acme', 'event-1', 'csv', req);
+    const result = await controller.queueReport('acme', 'event-1', 'csv', 'FULL_REGISTRATION_LIST', req);
 
     expect(result).toEqual({ reportId: 'r-1', status: 'QUEUED' });
     expect(analyticsService.queueDashboardReport).toHaveBeenCalledWith({
       orgCode: 'acme',
       eventId: 'event-1',
       format: 'csv',
+      dataset: 'FULL_REGISTRATION_LIST',
       req
     });
   });

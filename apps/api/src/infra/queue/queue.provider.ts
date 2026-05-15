@@ -1,11 +1,12 @@
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { createHash, createHmac } from 'node:crypto';
-import { PrismaClient } from '@prisma/client';
+import { CommunicationChannel, CommunicationDeliveryStatus, PrismaClient } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 import jwt from 'jsonwebtoken';
 import { createBadgeSignedDownloadUrl, putBadgeArtifact } from '../storage/badge-storage.util';
 import { putReportArtifact } from '../storage/report-storage.util';
+import { TEMPLATE_TYPE_KEY_PREFIX } from '../../modules/communications/communication-message-types';
 import {
   decodeWebhookConfig,
   webhookKeyPrefix,
@@ -214,6 +215,265 @@ function getDeliveryLinkTtlSeconds(): number {
   return Math.floor(value);
 }
 
+type CommunicationConfig = {
+  emailProvider: string | null;
+  smsProvider: string | null;
+  whatsappProvider: string | null;
+  senderName: string | null;
+  senderEmail: string | null;
+  emailWebhookUrl: string | null;
+  smsWebhookUrl: string | null;
+  whatsappWebhookUrl: string | null;
+};
+
+type CommunicationWithTemplate = Prisma.CommunicationLogGetPayload<{
+  include: {
+    template: true;
+  };
+}>;
+
+async function getCommunicationConfig(prisma: PrismaClient): Promise<CommunicationConfig> {
+  const row = await prisma.migrationMetadata.findUnique({
+    where: {
+      key: 'super-admin:communications-config'
+    },
+    select: {
+      value: true
+    }
+  });
+
+  let parsed: Record<string, unknown> = {};
+  if (row?.value) {
+    try {
+      parsed = JSON.parse(row.value) as Record<string, unknown>;
+    } catch {
+      parsed = {};
+    }
+  }
+
+  return {
+    emailProvider: typeof parsed.emailProvider === 'string' ? parsed.emailProvider : null,
+    smsProvider: typeof parsed.smsProvider === 'string' ? parsed.smsProvider : null,
+    whatsappProvider: typeof parsed.whatsappProvider === 'string' ? parsed.whatsappProvider : null,
+    senderName: typeof parsed.senderName === 'string' ? parsed.senderName : null,
+    senderEmail: typeof parsed.senderEmail === 'string' ? parsed.senderEmail : null,
+    emailWebhookUrl:
+      (typeof parsed.emailWebhookUrl === 'string' ? parsed.emailWebhookUrl : null) ||
+      process.env.COMM_EMAIL_WEBHOOK_URL ||
+      null,
+    smsWebhookUrl:
+      (typeof parsed.smsWebhookUrl === 'string' ? parsed.smsWebhookUrl : null) ||
+      process.env.COMM_SMS_WEBHOOK_URL ||
+      null,
+    whatsappWebhookUrl:
+      (typeof parsed.whatsappWebhookUrl === 'string' ? parsed.whatsappWebhookUrl : null) ||
+      process.env.COMM_WHATSAPP_WEBHOOK_URL ||
+      null
+  };
+}
+
+function getDefaultCommunicationBody(input: {
+  messageType?: string;
+  registrantName?: string;
+  eventName?: string;
+  referenceCode?: string;
+  downloadUrl?: string;
+}): string {
+  const name = input.registrantName || 'Attendee';
+  const eventName = input.eventName || 'your event';
+  const reference = input.referenceCode ? ` Reference: ${input.referenceCode}.` : '';
+
+  switch (input.messageType) {
+    case 'REGISTRATION_CONFIRMATION':
+      return `Hello ${name}, your registration for ${eventName} is confirmed.${reference}`;
+    case 'BADGE_DELIVERY':
+      return input.downloadUrl
+        ? `Hello ${name}, your badge for ${eventName} is ready: ${input.downloadUrl}`
+        : `Hello ${name}, your badge for ${eventName} is ready.`;
+    case 'APPROVAL_CONFIRMATION':
+      return `Hello ${name}, your registration for ${eventName} has been approved.${reference}`;
+    case 'REJECTION_MESSAGE':
+      return `Hello ${name}, your registration for ${eventName} was not approved.${reference}`;
+    case 'REMINDER':
+      return `Hello ${name}, this is a reminder for ${eventName}.${reference}`;
+    case 'EVENT_UPDATE':
+      return `Hello ${name}, there is an important update for ${eventName}.${reference}`;
+    case 'VIP_INSTRUCTION':
+      return `Hello ${name}, here are your VIP instructions for ${eventName}.${reference}`;
+    case 'SPEAKER_INSTRUCTION':
+      return `Hello ${name}, here are your speaker instructions for ${eventName}.${reference}`;
+    case 'MEDIA_ACCREDITATION_NOTICE':
+      return `Hello ${name}, your media accreditation notice for ${eventName}.${reference}`;
+    case 'THANK_YOU_MESSAGE':
+      return `Hello ${name}, thank you for participating in ${eventName}.`;
+    default:
+      return `Hello ${name}, this is an update from EveMange for ${eventName}.${reference}`;
+  }
+}
+
+async function dispatchCommunication(input: {
+  communication: CommunicationWithTemplate;
+  config: CommunicationConfig;
+}): Promise<{ providerMessageId: string }> {
+  const metadata =
+    input.communication.metadataJson && typeof input.communication.metadataJson === 'object'
+      ? (input.communication.metadataJson as Record<string, unknown>)
+      : {};
+
+  const messageType = typeof metadata.messageType === 'string' ? metadata.messageType : undefined;
+  const eventName = typeof metadata.eventName === 'string' ? metadata.eventName : undefined;
+  const registrantName = typeof metadata.fullName === 'string' ? metadata.fullName : undefined;
+  const referenceCode = typeof metadata.referenceCode === 'string' ? metadata.referenceCode : undefined;
+  const subjectFromMetadata = typeof metadata.subject === 'string' ? metadata.subject : undefined;
+  const downloadUrl = typeof metadata.downloadUrl === 'string' ? metadata.downloadUrl : undefined;
+
+  const subject =
+    input.communication.template?.subject ||
+    subjectFromMetadata ||
+    `EveMange update${eventName ? `: ${eventName}` : ''}`;
+
+  const body =
+    input.communication.template?.body ||
+    getDefaultCommunicationBody({
+      messageType,
+      registrantName,
+      eventName,
+      referenceCode,
+      downloadUrl
+    });
+
+  const webhookUrl =
+    input.communication.channel === CommunicationChannel.EMAIL
+      ? input.config.emailWebhookUrl
+      : input.communication.channel === CommunicationChannel.SMS
+        ? input.config.smsWebhookUrl
+        : input.config.whatsappWebhookUrl;
+
+  if (!webhookUrl) {
+    console.log(
+      `communication ${input.communication.channel} fallback to ${input.communication.recipientAddress}: ${subject}`
+    );
+    return {
+      providerMessageId: `local_${input.communication.id.slice(0, 12)}`
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        channel: input.communication.channel,
+        to: input.communication.recipientAddress,
+        subject,
+        text: body,
+        senderName: input.config.senderName,
+        senderEmail: input.config.senderEmail,
+        providerHint:
+          input.communication.channel === CommunicationChannel.EMAIL
+            ? input.config.emailProvider
+            : input.communication.channel === CommunicationChannel.SMS
+              ? input.config.smsProvider
+              : input.config.whatsappProvider,
+        metadata,
+        communicationLogId: input.communication.id
+      }),
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`Provider returned ${response.status}`);
+    }
+
+    const payload = (await response.json().catch(() => null)) as { messageId?: string } | null;
+    return {
+      providerMessageId: payload?.messageId || `provider_${input.communication.id.slice(0, 12)}`
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function enqueueAutomatedCommunication(input: {
+  prisma: PrismaClient;
+  organizationId: string;
+  registrantId: string;
+  recipientAddress: string;
+  channel: CommunicationChannel;
+  messageType: string;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  const mappingRows = await input.prisma.migrationMetadata.findMany({
+    where: {
+      key: {
+        startsWith: TEMPLATE_TYPE_KEY_PREFIX
+      },
+      value: input.messageType
+    },
+    select: {
+      key: true
+    }
+  });
+
+  const templateIds = mappingRows.map(row => row.key.replace(TEMPLATE_TYPE_KEY_PREFIX, ''));
+  const template =
+    templateIds.length > 0
+      ? await input.prisma.communicationTemplate.findFirst({
+          where: {
+            id: {
+              in: templateIds
+            },
+            organizationId: input.organizationId,
+            isActive: true,
+            channel: input.channel
+          },
+          select: {
+            id: true
+          },
+          orderBy: {
+            updatedAt: 'desc'
+          }
+        })
+      : null;
+
+  const log = await input.prisma.communicationLog.create({
+    data: {
+      organizationId: input.organizationId,
+      registrantId: input.registrantId,
+      templateId: template?.id || null,
+      channel: input.channel,
+      status: CommunicationDeliveryStatus.QUEUED,
+      senderUserId: null,
+      recipientAddress: input.recipientAddress,
+      metadataJson: {
+        messageType: input.messageType,
+        ...(input.metadata || {})
+      }
+    }
+  });
+
+  const queue = getSystemQueue();
+  await queue.add(
+    'communication.send',
+    {
+      communicationLogId: log.id
+    },
+    {
+      attempts: 3,
+      backoff: {
+        type: 'exponential',
+        delay: 1000
+      },
+      removeOnComplete: 100,
+      removeOnFail: 100
+    }
+  );
+}
+
 function csvCell(value: string | number): string {
   const normalized = String(value).replace(/"/g, '""');
   return `"${normalized}"`;
@@ -224,108 +484,382 @@ async function renderAnalyticsReportArtifact(input: {
   organizationId: string;
   eventId?: string;
   format: 'csv' | 'json';
+  dataset?:
+    | 'EVENT_SUMMARY'
+    | 'FULL_REGISTRATION_LIST'
+    | 'APPROVED_LIST'
+    | 'PENDING_LIST'
+    | 'CHECKED_IN_LIST'
+    | 'NO_SHOW_LIST'
+    | 'CATEGORY_REPORT'
+    | 'USHER_SCAN_REPORT'
+    | 'COMMUNICATION_REPORT';
 }): Promise<{ storagePath: string; contentType: string; rowCount: number }> {
   const prisma = getWorkerPrisma();
+  const dataset = input.dataset || 'EVENT_SUMMARY';
+  const reportRows: Array<Record<string, string | number | null>> = [];
 
-  const events = await prisma.event.findMany({
-    where: {
-      organizationId: input.organizationId,
-      id: input.eventId || undefined
-    },
-    select: {
-      id: true,
-      name: true,
-      startsAt: true,
-      _count: {
-        select: {
-          registrants: true,
-          checkins: true,
-          qrCodes: true
+  if (dataset === 'EVENT_SUMMARY') {
+    const events = await prisma.event.findMany({
+      where: {
+        organizationId: input.organizationId,
+        id: input.eventId || undefined
+      },
+      select: {
+        id: true,
+        name: true,
+        startsAt: true,
+        _count: {
+          select: {
+            registrants: true,
+            checkins: true,
+            qrCodes: true
+          }
         }
+      },
+      orderBy: {
+        startsAt: 'asc'
       }
-    },
-    orderBy: {
-      startsAt: 'asc'
-    }
-  });
+    });
 
-  const eventIds = events.map(event => event.id);
+    const eventIds = events.map(event => event.id);
+    const communicationSummary = eventIds.length
+      ? await prisma.communicationLog.groupBy({
+          by: ['status', 'registrantId'],
+          where: {
+            organizationId: input.organizationId,
+            registrant: {
+              eventId: {
+                in: eventIds
+              }
+            }
+          },
+          _count: {
+            id: true
+          }
+        })
+      : [];
 
-  const communicationSummary = eventIds.length
-    ? await prisma.communicationLog.groupBy({
-        by: ['status', 'registrantId'],
-        where: {
-          organizationId: input.organizationId,
-          registrant: {
+    const registrants = eventIds.length
+      ? await prisma.registrant.findMany({
+          where: {
+            organizationId: input.organizationId,
             eventId: {
               in: eventIds
             }
+          },
+          select: {
+            id: true,
+            eventId: true
           }
-        },
-        _count: {
-          id: true
-        }
-      })
-    : [];
+        })
+      : [];
 
-  const registrants = eventIds.length
-    ? await prisma.registrant.findMany({
-        where: {
-          organizationId: input.organizationId,
-          eventId: {
-            in: eventIds
-          }
-        },
-        select: {
-          id: true,
-          eventId: true
-        }
-      })
-    : [];
+    const eventByRegistrant = new Map(registrants.map(row => [row.id, row.eventId]));
+    const commByEvent = new Map<string, { sent: number; failed: number }>();
 
-  const eventByRegistrant = new Map(registrants.map(row => [row.id, row.eventId]));
-  const commByEvent = new Map<string, { sent: number; failed: number }>();
+    for (const row of communicationSummary) {
+      const eventId = row.registrantId ? eventByRegistrant.get(row.registrantId) : undefined;
+      if (!eventId) {
+        continue;
+      }
 
-  for (const row of communicationSummary) {
-    const eventId = row.registrantId ? eventByRegistrant.get(row.registrantId) : undefined;
-    if (!eventId) {
-      continue;
+      const current = commByEvent.get(eventId) || { sent: 0, failed: 0 };
+      if (row.status === 'SENT') {
+        current.sent += row._count.id;
+      }
+      if (row.status === 'FAILED') {
+        current.failed += row._count.id;
+      }
+      commByEvent.set(eventId, current);
     }
 
-    const current = commByEvent.get(eventId) || { sent: 0, failed: 0 };
-    if (row.status === 'SENT') {
-      current.sent += row._count.id;
+    for (const event of events) {
+      const comm = commByEvent.get(event.id) || { sent: 0, failed: 0 };
+      const checkinRate = event._count.registrants
+        ? Number(((event._count.checkins / event._count.registrants) * 100).toFixed(2))
+        : 0;
+      reportRows.push({
+        eventId: event.id,
+        eventName: event.name,
+        startsAt: event.startsAt ? event.startsAt.toISOString() : '',
+        registrations: event._count.registrants,
+        checkins: event._count.checkins,
+        checkinRate,
+        qrIssued: event._count.qrCodes,
+        communicationsSent: comm.sent,
+        communicationsFailed: comm.failed
+      });
     }
-    if (row.status === 'FAILED') {
-      current.failed += row._count.id;
-    }
-    commByEvent.set(eventId, current);
   }
 
-  const reportRows = events.map(event => {
-    const comm = commByEvent.get(event.id) || { sent: 0, failed: 0 };
-    const checkinRate = event._count.registrants
-      ? Number(((event._count.checkins / event._count.registrants) * 100).toFixed(2))
-      : 0;
-
-    return {
-      eventId: event.id,
-      eventName: event.name,
-      startsAt: event.startsAt ? event.startsAt.toISOString() : '',
-      registrations: event._count.registrants,
-      checkins: event._count.checkins,
-      checkinRate,
-      qrIssued: event._count.qrCodes,
-      communicationsSent: comm.sent,
-      communicationsFailed: comm.failed
+  if (
+    dataset === 'FULL_REGISTRATION_LIST' ||
+    dataset === 'APPROVED_LIST' ||
+    dataset === 'PENDING_LIST' ||
+    dataset === 'CHECKED_IN_LIST' ||
+    dataset === 'NO_SHOW_LIST'
+  ) {
+    const registrantWhere: Prisma.RegistrantWhereInput = {
+      organizationId: input.organizationId,
+      eventId: input.eventId || undefined
     };
-  });
+
+    if (dataset === 'APPROVED_LIST') {
+      registrantWhere.lifecycleStatus = 'APPROVED';
+    }
+    if (dataset === 'PENDING_LIST') {
+      registrantWhere.lifecycleStatus = 'PENDING';
+    }
+
+    if (dataset === 'CHECKED_IN_LIST') {
+      registrantWhere.checkins = {
+        some: {
+          syncState: 'ACCEPTED'
+        }
+      };
+    }
+
+    if (dataset === 'NO_SHOW_LIST') {
+      registrantWhere.lifecycleStatus = 'APPROVED';
+      registrantWhere.checkins = {
+        none: {
+          syncState: 'ACCEPTED'
+        }
+      };
+    }
+
+    const registrants = await prisma.registrant.findMany({
+      where: registrantWhere,
+      select: {
+        id: true,
+        referenceCode: true,
+        fullName: true,
+        email: true,
+        lifecycleStatus: true,
+        createdAt: true,
+        event: {
+          select: {
+            id: true,
+            name: true
+          }
+        },
+        registrationLink: {
+          select: {
+            id: true,
+            title: true,
+            slug: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    const acceptedCounts = await prisma.checkin.groupBy({
+      by: ['registrantId'],
+      where: {
+        organizationId: input.organizationId,
+        syncState: 'ACCEPTED',
+        registrantId: {
+          in: registrants.map(row => row.id)
+        }
+      },
+      _count: {
+        id: true
+      }
+    });
+    const checkinCountByRegistrantId = new Map(acceptedCounts.map(row => [row.registrantId, row._count.id]));
+
+    for (const registrant of registrants) {
+      reportRows.push({
+        registrantId: registrant.id,
+        referenceCode: registrant.referenceCode,
+        fullName: registrant.fullName,
+        email: registrant.email,
+        lifecycleStatus: registrant.lifecycleStatus,
+        eventId: registrant.event.id,
+        eventName: registrant.event.name,
+        linkId: registrant.registrationLink.id,
+        linkTitle: registrant.registrationLink.title,
+        linkSlug: registrant.registrationLink.slug,
+        acceptedCheckins: checkinCountByRegistrantId.get(registrant.id) || 0,
+        createdAt: registrant.createdAt.toISOString()
+      });
+    }
+  }
+
+  if (dataset === 'CATEGORY_REPORT') {
+    const links = await prisma.registrationLink.findMany({
+      where: {
+        organizationId: input.organizationId,
+        eventId: input.eventId || undefined
+      },
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        _count: {
+          select: {
+            registrants: true
+          }
+        }
+      }
+    });
+
+    const acceptedCheckins = await prisma.checkin.findMany({
+      where: {
+        organizationId: input.organizationId,
+        syncState: 'ACCEPTED',
+        ...(input.eventId ? { eventId: input.eventId } : {})
+      },
+      select: {
+        registrant: {
+          select: {
+            registrationLinkId: true
+          }
+        }
+      }
+    });
+    const checkinsByLinkId = new Map<string, number>();
+    for (const row of acceptedCheckins) {
+      const linkId = row.registrant.registrationLinkId;
+      checkinsByLinkId.set(linkId, (checkinsByLinkId.get(linkId) || 0) + 1);
+    }
+
+    for (const link of links) {
+      const checkins = checkinsByLinkId.get(link.id) || 0;
+      reportRows.push({
+        categoryLinkId: link.id,
+        categoryTitle: link.title,
+        categorySlug: link.slug,
+        registrations: link._count.registrants,
+        checkins,
+        checkinRate: link._count.registrants > 0 ? Number(((checkins / link._count.registrants) * 100).toFixed(2)) : 0
+      });
+    }
+  }
+
+  if (dataset === 'USHER_SCAN_REPORT') {
+    const rows = await prisma.checkin.groupBy({
+      by: ['usherUserId', 'eventId', 'entrance'],
+      where: {
+        organizationId: input.organizationId,
+        syncState: 'ACCEPTED',
+        eventId: input.eventId || undefined
+      },
+      _count: {
+        id: true
+      }
+    });
+
+    const usherIds = rows.map(row => row.usherUserId).filter((value): value is string => Boolean(value));
+    const users = usherIds.length
+      ? await prisma.user.findMany({
+          where: {
+            id: {
+              in: usherIds
+            }
+          },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true
+          }
+        })
+      : [];
+    const userById = new Map(users.map(user => [user.id, user]));
+
+    const events = await prisma.event.findMany({
+      where: {
+        id: {
+          in: rows.map(row => row.eventId)
+        }
+      },
+      select: {
+        id: true,
+        name: true
+      }
+    });
+    const eventById = new Map(events.map(event => [event.id, event.name]));
+
+    for (const row of rows) {
+      const user = row.usherUserId ? userById.get(row.usherUserId) : undefined;
+      const usherName = user
+        ? [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || user.email
+        : 'Unknown Usher';
+      reportRows.push({
+        eventId: row.eventId,
+        eventName: eventById.get(row.eventId) || 'Unknown Event',
+        usherUserId: row.usherUserId,
+        usherName,
+        entrance: row.entrance || 'Unknown',
+        scans: row._count.id
+      });
+    }
+  }
+
+  if (dataset === 'COMMUNICATION_REPORT') {
+    const logs = await prisma.communicationLog.findMany({
+      where: {
+        organizationId: input.organizationId,
+        registrant: {
+          eventId: input.eventId || undefined
+        }
+      },
+      select: {
+        channel: true,
+        status: true,
+        registrant: {
+          select: {
+            event: {
+              select: {
+                id: true,
+                name: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    const aggregate = new Map<string, { eventId: string; eventName: string; channel: string; status: string; count: number }>();
+    for (const log of logs) {
+      if (!log.registrant) {
+        continue;
+      }
+      const key = `${log.registrant.event.id}|${log.channel}|${log.status}`;
+      const current =
+        aggregate.get(key) || {
+          eventId: log.registrant.event.id,
+          eventName: log.registrant.event.name,
+          channel: log.channel,
+          status: log.status,
+          count: 0
+        };
+      current.count += 1;
+      aggregate.set(key, current);
+    }
+
+    for (const row of aggregate.values()) {
+      reportRows.push({
+        eventId: row.eventId,
+        eventName: row.eventName,
+        channel: row.channel,
+        status: row.status,
+        count: row.count
+      });
+    }
+  }
 
   if (input.format === 'json') {
     const body = JSON.stringify(
       {
         reportId: input.reportId,
         organizationId: input.organizationId,
+        dataset,
         generatedAt: new Date().toISOString(),
         totalRows: reportRows.length,
         rows: reportRows
@@ -349,31 +883,22 @@ async function renderAnalyticsReportArtifact(input: {
     };
   }
 
-  const header = [
-    'eventId',
-    'eventName',
-    'startsAt',
-    'registrations',
-    'checkins',
-    'checkinRate',
-    'qrIssued',
-    'communicationsSent',
-    'communicationsFailed'
-  ].join(',');
+  const headerKeys = reportRows.length > 0 ? Object.keys(reportRows[0]) : ['message'];
+  const header = headerKeys.join(',');
 
-  const lines = reportRows.map(row =>
-    [
-      csvCell(row.eventId),
-      csvCell(row.eventName),
-      csvCell(row.startsAt),
-      row.registrations,
-      row.checkins,
-      row.checkinRate,
-      row.qrIssued,
-      row.communicationsSent,
-      row.communicationsFailed
-    ].join(',')
-  );
+  const lines = reportRows.length
+    ? reportRows.map(row =>
+        headerKeys
+          .map(key => {
+            const value = row[key];
+            if (typeof value === 'number') {
+              return String(value);
+            }
+            return csvCell(value === null ? '' : String(value));
+          })
+          .join(',')
+      )
+    : [csvCell('No rows for selected export dataset')];
 
   const body = [header, ...lines].join('\n');
   const storagePath = await putReportArtifact({
@@ -540,10 +1065,24 @@ export function startSystemWorker(): Worker {
           confirmationMessage: string | null;
         };
 
-        // Phase 3 worker baseline: in Phase 5 this is replaced with real email delivery.
-        console.log(
-          `confirmation-email queued for ${payload.email} (${payload.referenceCode}) on ${payload.eventName} using template ${payload.templateName}`
-        );
+        const prisma = getWorkerPrisma();
+        await enqueueAutomatedCommunication({
+          prisma,
+          organizationId: payload.organizationId,
+          registrantId: payload.registrantId,
+          recipientAddress: payload.email,
+          channel: CommunicationChannel.EMAIL,
+          messageType: 'REGISTRATION_CONFIRMATION',
+          metadata: {
+            referenceCode: payload.referenceCode,
+            fullName: payload.fullName,
+            eventName: payload.eventName,
+            linkTitle: payload.linkTitle,
+            templateName: payload.templateName,
+            confirmationMessage: payload.confirmationMessage,
+            subject: `Registration confirmation: ${payload.eventName}`
+          }
+        });
         return;
       }
 
@@ -552,7 +1091,7 @@ export function startSystemWorker(): Worker {
           importJobId: string;
           organizationId: string;
           eventId: string;
-          registrationLinkId: string;
+          registrationLinkId?: string;
           rows: Array<{ data: Record<string, unknown> }>;
         };
 
@@ -568,10 +1107,35 @@ export function startSystemWorker(): Worker {
         const mapping = (importJob.mappingProfileJson || {}) as {
           fullName?: string;
           email?: string;
+          phone?: string;
+          category?: string;
         };
 
         if (!mapping.fullName || !mapping.email) {
           throw new Error('Invalid mapping profile');
+        }
+
+        if (!payload.registrationLinkId && !mapping.category) {
+          throw new Error('Import requires default registrationLinkId or mapping.category');
+        }
+
+        const links = await prisma.registrationLink.findMany({
+          where: {
+            organizationId: payload.organizationId,
+            eventId: payload.eventId
+          },
+          select: {
+            id: true,
+            slug: true,
+            title: true
+          }
+        });
+
+        const linkByNormalizedKey = new Map<string, string>();
+        for (const link of links) {
+          linkByNormalizedKey.set(link.id.toLowerCase(), link.id);
+          linkByNormalizedKey.set(link.slug.toLowerCase(), link.id);
+          linkByNormalizedKey.set(link.title.trim().toLowerCase(), link.id);
         }
 
         await prisma.importJob.update({
@@ -592,14 +1156,23 @@ export function startSystemWorker(): Worker {
           const email = String(row.data[mapping.email] || '')
             .trim()
             .toLowerCase();
+          const phone = mapping.phone ? String(row.data[mapping.phone] || '').trim() : '';
 
-          if (!fullName || !email || !email.includes('@')) {
+          let targetRegistrationLinkId = payload.registrationLinkId || null;
+          if (mapping.category) {
+            const categoryValue = String(row.data[mapping.category] || '').trim().toLowerCase();
+            if (categoryValue) {
+              targetRegistrationLinkId = linkByNormalizedKey.get(categoryValue) || null;
+            }
+          }
+
+          if (!fullName || !email || !email.includes('@') || !targetRegistrationLinkId) {
             failedRows += 1;
             await prisma.importError.create({
               data: {
                 importJobId: importJob.id,
                 rowNumber,
-                message: 'Missing or invalid fullName/email mapped values',
+                message: 'Missing or invalid fullName/email/category mapped values',
                 rawDataJson: row.data as Prisma.InputJsonValue
               }
             });
@@ -608,7 +1181,7 @@ export function startSystemWorker(): Worker {
 
           const existing = await prisma.registrant.findFirst({
             where: {
-              registrationLinkId: payload.registrationLinkId,
+              registrationLinkId: targetRegistrationLinkId,
               email
             }
           });
@@ -641,11 +1214,49 @@ export function startSystemWorker(): Worker {
               }
             });
 
+            if (phone) {
+              await prisma.registrantResponse.upsert({
+                where: {
+                  registrantId_fieldKey: {
+                    registrantId: existing.id,
+                    fieldKey: 'phone'
+                  }
+                },
+                update: {
+                  valueText: phone
+                },
+                create: {
+                  registrantId: existing.id,
+                  fieldKey: 'phone',
+                  valueText: phone
+                }
+              });
+            }
+
             try {
               await issueBadgeForRegistrantFromWorker(existing.id);
             } catch {
               // Import processing should complete even if badge queueing fails for a row.
             }
+
+            try {
+              await enqueueAutomatedCommunication({
+                prisma,
+                organizationId: payload.organizationId,
+                registrantId: existing.id,
+                recipientAddress: email,
+                channel: CommunicationChannel.EMAIL,
+                messageType: 'REGISTRATION_CONFIRMATION',
+                metadata: {
+                  source: 'import.update',
+                  fullName,
+                  eventId: payload.eventId
+                }
+              });
+            } catch {
+              // Import processing should complete even if communication queueing fails for a row.
+            }
+
             successfulRows += 1;
             continue;
           }
@@ -655,7 +1266,7 @@ export function startSystemWorker(): Worker {
             data: {
               organizationId: payload.organizationId,
               eventId: payload.eventId,
-              registrationLinkId: payload.registrationLinkId,
+              registrationLinkId: targetRegistrationLinkId,
               referenceCode,
               email,
               fullName,
@@ -670,11 +1281,40 @@ export function startSystemWorker(): Worker {
             }
           });
 
+          if (phone) {
+            await prisma.registrantResponse.create({
+              data: {
+                registrantId: createdRegistrant.id,
+                fieldKey: 'phone',
+                valueText: phone
+              }
+            });
+          }
+
           try {
             await issueBadgeForRegistrantFromWorker(createdRegistrant.id);
           } catch {
             // Import processing should complete even if badge queueing fails for a row.
           }
+
+          try {
+            await enqueueAutomatedCommunication({
+              prisma,
+              organizationId: payload.organizationId,
+              registrantId: createdRegistrant.id,
+              recipientAddress: email,
+              channel: CommunicationChannel.EMAIL,
+              messageType: 'REGISTRATION_CONFIRMATION',
+              metadata: {
+                source: 'import.create',
+                fullName,
+                eventId: payload.eventId
+              }
+            });
+          } catch {
+            // Import processing should complete even if communication queueing fails for a row.
+          }
+
           successfulRows += 1;
         }
 
@@ -736,20 +1376,40 @@ export function startSystemWorker(): Worker {
           throw new Error('Simulated provider failure');
         }
 
-        await prisma.communicationLog.update({
-          where: {
-            id: communication.id
-          },
-          data: {
-            status: 'SENT',
-            sentAt: new Date(),
-            providerMessageId: `msg_${communication.id.slice(0, 8)}`,
-            errorMessage: null
-          }
-        });
+        try {
+          const config = await getCommunicationConfig(prisma);
+          const delivery = await dispatchCommunication({
+            communication,
+            config
+          });
 
-        console.log(`communication sent to ${communication.recipientAddress}`);
-        return;
+          await prisma.communicationLog.update({
+            where: {
+              id: communication.id
+            },
+            data: {
+              status: 'SENT',
+              sentAt: new Date(),
+              providerMessageId: delivery.providerMessageId,
+              errorMessage: null
+            }
+          });
+
+          console.log(`communication sent to ${communication.recipientAddress}`);
+          return;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unknown communication provider error';
+          await prisma.communicationLog.update({
+            where: {
+              id: communication.id
+            },
+            data: {
+              status: 'FAILED',
+              errorMessage: message
+            }
+          });
+          throw error;
+        }
       }
 
       if (job.name === 'analytics.report.generate') {
@@ -759,6 +1419,16 @@ export function startSystemWorker(): Worker {
           requestedByUserId: string | null;
           format: 'csv' | 'json';
           eventId?: string;
+          dataset?:
+            | 'EVENT_SUMMARY'
+            | 'FULL_REGISTRATION_LIST'
+            | 'APPROVED_LIST'
+            | 'PENDING_LIST'
+            | 'CHECKED_IN_LIST'
+            | 'NO_SHOW_LIST'
+            | 'CATEGORY_REPORT'
+            | 'USHER_SCAN_REPORT'
+            | 'COMMUNICATION_REPORT';
         };
 
         const prisma = getWorkerPrisma();
@@ -774,6 +1444,7 @@ export function startSystemWorker(): Worker {
             metadataJson: {
               format: payload.format,
               eventId: payload.eventId || null,
+              dataset: payload.dataset || 'EVENT_SUMMARY',
               queueJobId: job.id
             }
           }
@@ -784,7 +1455,8 @@ export function startSystemWorker(): Worker {
             reportId: payload.reportId,
             organizationId: payload.organizationId,
             eventId: payload.eventId,
-            format: payload.format
+            format: payload.format,
+            dataset: payload.dataset
           });
 
           await prisma.auditLog.create({
@@ -799,6 +1471,7 @@ export function startSystemWorker(): Worker {
               metadataJson: {
                 format: payload.format,
                 eventId: payload.eventId || null,
+                dataset: payload.dataset || 'EVENT_SUMMARY',
                 rowCount: rendered.rowCount,
                 storagePath: rendered.storagePath,
                 contentType: rendered.contentType,
@@ -812,6 +1485,7 @@ export function startSystemWorker(): Worker {
             organizationId: payload.organizationId,
             format: payload.format,
             eventId: payload.eventId || null,
+            dataset: payload.dataset || 'EVENT_SUMMARY',
             rowCount: rendered.rowCount,
             storagePath: rendered.storagePath,
             contentType: rendered.contentType,
@@ -831,6 +1505,7 @@ export function startSystemWorker(): Worker {
               metadataJson: {
                 format: payload.format,
                 eventId: payload.eventId || null,
+                dataset: payload.dataset || 'EVENT_SUMMARY',
                 queueJobId: job.id,
                 reason: message
               }
@@ -927,6 +1602,22 @@ export function startSystemWorker(): Worker {
             metadataJson: {
               expiresInSeconds
             }
+          }
+        });
+
+        await enqueueAutomatedCommunication({
+          prisma,
+          organizationId: badge.organizationId,
+          registrantId: badge.registrantId,
+          recipientAddress: badge.registrant.email,
+          channel: CommunicationChannel.EMAIL,
+          messageType: 'BADGE_DELIVERY',
+          metadata: {
+            fullName: badge.registrant.fullName,
+            eventName: badge.event.name,
+            downloadUrl,
+            subject: `Badge ready: ${badge.event.name}`,
+            badgeId: badge.id
           }
         });
 
