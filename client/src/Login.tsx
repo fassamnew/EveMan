@@ -1,17 +1,14 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Lock, Mail, Loader2 } from 'lucide-react';
-import { getApiBaseUrl, storeAuth } from './api';
 
-type LoginProps = {
-  onSuccess: () => void;
-};
-
-const Login: React.FC<LoginProps> = ({ onSuccess }) => {
+const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,13 +16,10 @@ const Login: React.FC<LoginProps> = ({ onSuccess }) => {
     setError('');
     
     try {
-      const response = await axios.post(`${getApiBaseUrl()}/api/auth/login`, { email, password });
-      if (!response.data?.accessToken || !response.data?.refreshToken) {
-        throw new Error('Authentication payload missing tokens');
-      }
-
-      storeAuth(response.data);
-      onSuccess();
+      const response = await axios.post('http://localhost:5001/api/auth/login', { email, password });
+      localStorage.setItem('token', response.data.token);
+      localStorage.setItem('user', JSON.stringify(response.data.user));
+      navigate('/portal/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Login failed. Please check your credentials.');
     } finally {
@@ -89,6 +83,10 @@ const Login: React.FC<LoginProps> = ({ onSuccess }) => {
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Log In'}
           </button>
         </form>
+        
+        <div className="mt-8 text-center">
+            <p className="text-sm text-gray-500 italic">Demo credentials: admin@example.com / admin123</p>
+        </div>
       </div>
     </div>
   );

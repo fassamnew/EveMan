@@ -1,50 +1,76 @@
 import React, { useEffect, useState } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
+import axios from 'axios';
+import { QrCode, CheckCircle, XCircle, Loader2, Calendar } from 'lucide-react';
+
+interface Event {
+  id: string;
+  name: string;
+}
 
 const Scanner: React.FC = () => {
+  const [events, setEvents] = useState<Event[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [scanResult, setScanResult] = useState<string | null>(null);
   const [attendee, setAttendee] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const authHeader = {
+    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+  };
 
   useEffect(() => {
+    const fetchEvents = async () => {
+      try {
+        const res = await axios.get('http://localhost:5001/api/usher/events', authHeader);
+        setEvents(res.data);
+        if (res.data.length > 0) {
+          setSelectedEventId(res.data[0].id);
+        }
+      } catch (err) {
+        setError('Failed to fetch events for scanner.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchEvents();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedEventId || scanResult) return;
+
     const scanner = new Html5QrcodeScanner(
       "reader",
       { fps: 10, qrbox: { width: 250, height: 250 } },
-      /* verbose= */ false
+      false
     );
 
-    scanner.render(onScanSuccess, onScanFailure);
+    scanner.render(onScanSuccess, (err) => {});
 
     function onScanSuccess(decodedText: string) {
       setScanResult(decodedText);
       verifyAttendee(decodedText);
-      scanner.clear(); // Stop scanning after success
-    }
-
-    function onScanFailure(error: any) {
-      // console.warn(`Code scan error = ${error}`);
+      scanner.clear();
     }
 
     return () => {
-      scanner.clear().catch(err => console.error("Failed to clear scanner", err));
+      scanner.clear().catch(err => {});
     };
-  }, []);
+  }, [selectedEventId, scanResult]);
 
-  const verifyAttendee = async (id: string) => {
+  const verifyAttendee = async (attendeeId: string) => {
     try {
-      const response = await fetch(`${window.location.protocol}//${window.location.hostname}:5001/api/verify/${id}`, {
-        method: 'POST'
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setAttendee(data);
-        setError(null);
-      } else {
-        setError(data.error || 'Verification failed');
-        setAttendee(null);
-      }
-    } catch (err) {
-      setError('Could not connect to server');
+      const response = await axios.post(
+        `http://localhost:5001/api/events/${selectedEventId}/verify/${attendeeId}`,
+        {},
+        authHeader
+      );
+      setAttendee(response.data.attendee);
+      setError(null);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Verification failed');
+      setAttendee(null);
     }
   };
 
@@ -52,32 +78,80 @@ const Scanner: React.FC = () => {
     setScanResult(null);
     setAttendee(null);
     setError(null);
-    window.location.reload(); // Simplest way to restart the scanner instance
   };
 
+  if (loading) return (
+    <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
+      <Loader2 className="w-10 h-10 text-primary animate-spin" />
+      <p className="text-gray-500">Initializing Scanner...</p>
+    </div>
+  );
+
   return (
-    <div style={{ padding: '20px', textAlign: 'center', fontFamily: 'sans-serif' }}>
-      <h1>QR Entry Scanner</h1>
-      
-      {!scanResult && <div id="reader" style={{ width: '100%', maxWidth: '500px', margin: 'auto' }}></div>}
+    <div className="max-w-xl mx-auto space-y-8 animate-in fade-in duration-500">
+      <header className="text-center">
+        <h1 className="text-3xl font-black text-gray-900 flex items-center justify-center gap-3">
+          <QrCode className="w-8 h-8 text-primary" />
+          Onsite Entry Scan
+        </h1>
+        <p className="text-gray-500 mt-1">Select an event and scan badge QR code</p>
+      </header>
 
-      {error && (
-        <div style={{ color: 'red', margin: '20px', padding: '10px', border: '1px solid red' }}>
-          <h3>Error: {error}</h3>
-          <button onClick={resetScanner}>Scan Again</button>
-        </div>
-      )}
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-3">
+        <Calendar className="w-5 h-5 text-gray-400 ml-2" />
+        <select 
+          value={selectedEventId || ''} 
+          onChange={(e) => {
+            setSelectedEventId(e.target.value);
+            resetScanner();
+          }}
+          className="bg-transparent border-none focus:ring-0 text-sm font-bold text-gray-700 w-full"
+        >
+          {events.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+        </select>
+      </div>
 
-      {attendee && (
-        <div style={{ margin: '20px', padding: '20px', border: '2px solid green', borderRadius: '10px', background: '#e9f7ef' }}>
-          <h2 style={{ color: '#28a745' }}>SUCCESS: CHECKED IN</h2>
-          <p><strong>Name:</strong> {attendee.fullName}</p>
-          <p><strong>Category:</strong> {attendee.category}</p>
-          <p><strong>Company:</strong> {attendee.company}</p>
-          <p><strong>Time:</strong> {new Date().toLocaleTimeString()}</p>
-          <button onClick={resetScanner} style={{ padding: '10px 20px', marginTop: '10px' }}>Next Scan</button>
-        </div>
-      )}
+      <div className="bg-white rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100 overflow-hidden p-6">
+        {!scanResult && selectedEventId && (
+          <div id="reader" className="w-full rounded-2xl overflow-hidden border border-gray-100"></div>
+        )}
+
+        {error && (
+          <div className="text-center space-y-4 py-10">
+            <XCircle className="w-20 h-20 text-red-500 mx-auto" />
+            <h3 className="text-2xl font-black text-red-600">ACCESS DENIED</h3>
+            <p className="text-gray-600 font-medium px-10">{error}</p>
+            <button 
+              onClick={resetScanner}
+              className="px-8 py-3 bg-gray-900 text-white font-bold rounded-xl hover:bg-gray-800 transition-all"
+            >
+              Scan Next
+            </button>
+          </div>
+        )}
+
+        {attendee && (
+          <div className="text-center space-y-6 py-10 animate-in zoom-in duration-300">
+            <CheckCircle className="w-20 h-20 text-secondary mx-auto" />
+            <div>
+              <h3 className="text-3xl font-black text-secondary">WELCOME</h3>
+              <p className="text-xl font-bold text-gray-900 mt-2">{attendee.fullName}</p>
+              <p className="text-gray-500">{attendee.designation} at {attendee.company}</p>
+            </div>
+            
+            <div className="inline-flex items-center gap-2 px-6 py-2 bg-indigo-50 text-indigo-700 rounded-full text-sm font-black uppercase">
+              {attendee.linkLabel}
+            </div>
+
+            <button 
+              onClick={resetScanner}
+              className="w-full py-4 bg-secondary text-white font-black rounded-2xl shadow-lg shadow-emerald-500/20 hover:bg-emerald-600 transition-all"
+            >
+              Ready for Next
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
