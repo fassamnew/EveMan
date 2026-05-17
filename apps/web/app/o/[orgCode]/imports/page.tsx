@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { authFetch } from '../../../../lib/session';
+import { useTheme } from '../../../../lib/theme-provider';
 
 type EventItem = {
   id: string;
@@ -34,11 +35,12 @@ type ImportErrorItem = {
   message: string;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 export default function ImportsPage() {
   const params = useParams<{ orgCode: string }>();
   const router = useRouter();
+  const { theme } = useTheme();
   const orgCode = params.orgCode;
 
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -57,11 +59,20 @@ export default function ImportsPage() {
   const [mappingPhone, setMappingPhone] = useState('phone');
   const [mappingCategory, setMappingCategory] = useState('category');
   const [useCategoryMapping, setUseCategoryMapping] = useState(false);
-  const [fileContentBase64, setFileContentBase64] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedFilename, setSelectedFilename] = useState('');
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isDark = theme === 'dark';
+  const pageClass = isDark ? 'min-h-screen bg-slate-950 px-6 py-10 text-slate-100' : 'min-h-screen bg-slate-50 px-6 py-10 text-slate-950';
+  const cardClass = isDark ? 'rounded-xl border border-slate-800 bg-slate-900/60' : 'rounded-xl border border-slate-200 bg-white';
+  const fieldClass = isDark
+    ? 'rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100'
+    : 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-950';
+  const subtleTextClass = isDark ? 'text-slate-400' : 'text-slate-600';
+  const secondaryTextClass = isDark ? 'text-slate-300' : 'text-slate-700';
 
   const onSessionExpired = useCallback(() => {
     router.replace(`/o/${orgCode}`);
@@ -143,7 +154,7 @@ export default function ImportsPage() {
   async function createImportJob(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
 
-    if (!fileContentBase64) {
+    if (!selectedFile) {
       setError('Select a CSV or XLSX file first');
       return;
     }
@@ -160,25 +171,29 @@ export default function ImportsPage() {
 
     setError(null);
 
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('sourceFilename', sourceFilename);
+    formData.append('sourceFileType', sourceFileType);
+    formData.append('duplicateStrategy', duplicateStrategy);
+    formData.append(
+      'mappingProfile',
+      JSON.stringify({
+        fullName: mappingFullName,
+        email: mappingEmail,
+        phone: mappingPhone.trim() || undefined,
+        category: useCategoryMapping ? mappingCategory.trim() || undefined : undefined
+      })
+    );
+    formData.append('eventId', eventId);
+
+    if (!useCategoryMapping && registrationLinkId) {
+      formData.append('registrationLinkId', registrationLinkId);
+    }
+
     const response = await authFetch(`${API_BASE}/org/${orgCode}/imports/jobs`, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json'
-      },
-      body: JSON.stringify({
-        sourceFilename,
-        sourceFileType,
-        duplicateStrategy,
-        mappingProfile: {
-          fullName: mappingFullName,
-          email: mappingEmail,
-          phone: mappingPhone.trim() || undefined,
-          category: useCategoryMapping ? mappingCategory.trim() : undefined
-        },
-        eventId,
-        registrationLinkId: useCategoryMapping ? undefined : registrationLinkId || undefined,
-        fileContentBase64
-      })
+      body: formData
     }, onSessionExpired);
 
     if (!response.ok) {
@@ -192,7 +207,7 @@ export default function ImportsPage() {
 
   async function onFileSelected(file: File | null): Promise<void> {
     if (!file) {
-      setFileContentBase64('');
+      setSelectedFile(null);
       setSelectedFilename('');
       return;
     }
@@ -204,14 +219,7 @@ export default function ImportsPage() {
       setSourceFileType('CSV');
     }
 
-    const arrayBuffer = await file.arrayBuffer();
-    const uint8 = new Uint8Array(arrayBuffer);
-    let binary = '';
-    for (let i = 0; i < uint8.byteLength; i += 1) {
-      binary += String.fromCharCode(uint8[i]);
-    }
-
-    setFileContentBase64(btoa(binary));
+    setSelectedFile(file);
     setSelectedFilename(file.name);
     setSourceFilename(file.name);
   }
@@ -236,33 +244,33 @@ export default function ImportsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100">
+    <main className={pageClass}>
       <div className="mx-auto max-w-7xl">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-3xl font-semibold tracking-tight">Attendee Imports</h1>
           <button
             type="button"
             onClick={() => router.push(`/o/${orgCode}`)}
-            className="rounded-lg border border-slate-700 px-3 py-1 text-sm"
+            className={isDark ? 'rounded-lg border border-slate-700 px-3 py-1 text-sm' : 'rounded-lg border border-slate-300 px-3 py-1 text-sm'}
           >
             Back to portal
           </button>
         </div>
 
-        {error ? <p className="mb-4 text-sm text-red-300">{error}</p> : null}
+        {error ? <p className={isDark ? 'mb-4 text-sm text-red-300' : 'mb-4 text-sm text-red-600'}>{error}</p> : null}
 
-        <form onSubmit={createImportJob} className="mb-6 grid gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4 md:grid-cols-2">
+        <form onSubmit={createImportJob} className={`mb-6 grid gap-3 p-4 md:grid-cols-2 ${cardClass}`}>
           <input
             value={sourceFilename}
             onChange={event => setSourceFilename(event.target.value)}
             required
-            className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+            className={fieldClass}
             placeholder="attendees.csv"
           />
           <select
             value={sourceFileType}
             onChange={event => setSourceFileType(event.target.value as 'CSV' | 'XLSX')}
-            className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+            className={fieldClass}
           >
             <option value="CSV">CSV</option>
             <option value="XLSX">XLSX</option>
@@ -271,7 +279,7 @@ export default function ImportsPage() {
           <select
             value={duplicateStrategy}
             onChange={event => setDuplicateStrategy(event.target.value as 'SKIP' | 'UPDATE' | 'FLAG')}
-            className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+            className={fieldClass}
           >
             <option value="SKIP">Duplicate strategy: SKIP</option>
             <option value="UPDATE">Duplicate strategy: UPDATE</option>
@@ -281,7 +289,7 @@ export default function ImportsPage() {
           <select
             value={eventId}
             onChange={event => setEventId(event.target.value)}
-            className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+            className={fieldClass}
           >
             {events.map(item => (
               <option key={item.id} value={item.id}>
@@ -294,7 +302,7 @@ export default function ImportsPage() {
             value={registrationLinkId}
             onChange={event => setRegistrationLinkId(event.target.value)}
             disabled={useCategoryMapping}
-            className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+            className={fieldClass}
           >
             {links.map(item => (
               <option key={item.id} value={item.id}>
@@ -309,31 +317,31 @@ export default function ImportsPage() {
               onChange={event => setMappingFullName(event.target.value)}
               required
               placeholder="full name column"
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+              className={fieldClass}
             />
             <input
               value={mappingEmail}
               onChange={event => setMappingEmail(event.target.value)}
               required
               placeholder="email column"
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+              className={fieldClass}
             />
             <input
               value={mappingPhone}
               onChange={event => setMappingPhone(event.target.value)}
               placeholder="phone column (optional)"
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+              className={fieldClass}
             />
             <input
               value={mappingCategory}
               onChange={event => setMappingCategory(event.target.value)}
               required={useCategoryMapping}
               placeholder="category column"
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+              className={fieldClass}
             />
           </div>
 
-          <label className="md:col-span-2 flex items-center gap-2 text-sm text-slate-300">
+          <label className={`md:col-span-2 flex items-center gap-2 text-sm ${secondaryTextClass}`}>
             <input
               type="checkbox"
               checked={useCategoryMapping}
@@ -343,17 +351,17 @@ export default function ImportsPage() {
           </label>
 
           {useCategoryMapping ? (
-            <p className="md:col-span-2 text-xs text-slate-400">
+            <p className={`md:col-span-2 text-xs ${subtleTextClass}`}>
               Default link is disabled while category mapping is active.
             </p>
           ) : null}
 
           <div className="md:col-span-2 rounded-lg border border-cyan-700/40 bg-cyan-950/20 px-3 py-3 text-sm">
             <p className="font-semibold text-cyan-200">CSV format guide</p>
-            <p className="mt-1 text-slate-300">
+            <p className={`mt-1 ${secondaryTextClass}`}>
               Your file must have a header row. The column names should match the mapping fields below.
             </p>
-            <p className="mt-2 text-slate-300">
+            <p className={`mt-2 ${secondaryTextClass}`}>
               Expected headers right now:
               <span className="ml-2 rounded bg-slate-900 px-2 py-0.5 font-mono text-xs text-cyan-200">
                 {mappingFullName || 'name'}
@@ -368,18 +376,18 @@ export default function ImportsPage() {
                 {mappingCategory || 'category'}
               </span>
             </p>
-            <div className="mt-3 overflow-x-auto rounded border border-slate-700 bg-slate-950/80 p-3 font-mono text-xs text-slate-200">
+            <div className={isDark ? 'mt-3 overflow-x-auto rounded border border-slate-700 bg-slate-950/80 p-3 font-mono text-xs text-slate-200' : 'mt-3 overflow-x-auto rounded border border-slate-300 bg-white p-3 font-mono text-xs text-slate-800'}>
               <p>{`${mappingFullName || 'name'},${mappingEmail || 'email'},${mappingPhone || 'phone'},${mappingCategory || 'category'}`}</p>
               <p>Abel Tesfaye,abel@example.com,+251900000000,vip</p>
               <p>Sara Demissie,sara@example.com,+251911111111,standard</p>
             </div>
-            <p className="mt-2 text-xs text-slate-400">
+            <p className={`mt-2 text-xs ${subtleTextClass}`}>
               For XLSX files, use the same header names in the first row.
             </p>
           </div>
 
-          <div className="md:col-span-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-3">
-            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-300">Upload file</label>
+          <div className={isDark ? 'md:col-span-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-3' : 'md:col-span-2 rounded-lg border border-slate-300 bg-white px-3 py-3'}>
+            <label className={`block text-xs font-semibold uppercase tracking-wide ${secondaryTextClass}`}>Upload file</label>
             <input
               type="file"
               accept=".csv,.xlsx"
@@ -389,7 +397,7 @@ export default function ImportsPage() {
               }}
               className="mt-2 text-sm"
             />
-            <p className="mt-2 text-xs text-slate-400">
+            <p className={`mt-2 text-xs ${subtleTextClass}`}>
               Selected: {selectedFilename || 'none'}
             </p>
           </div>
@@ -399,26 +407,26 @@ export default function ImportsPage() {
           </button>
         </form>
 
-        <section className="mb-6 rounded-xl border border-slate-800 bg-slate-900/60">
-          <div className="border-b border-slate-800 px-4 py-3 text-sm font-semibold">Import jobs</div>
-          {isLoading ? <p className="px-4 py-4 text-sm text-slate-300">Loading...</p> : null}
-          {!isLoading && jobs.length === 0 ? <p className="px-4 py-4 text-sm text-slate-300">No jobs yet.</p> : null}
+        <section className={`mb-6 ${cardClass}`}>
+          <div className={isDark ? 'border-b border-slate-800 px-4 py-3 text-sm font-semibold' : 'border-b border-slate-200 px-4 py-3 text-sm font-semibold'}>Import jobs</div>
+          {isLoading ? <p className={`px-4 py-4 text-sm ${secondaryTextClass}`}>Loading...</p> : null}
+          {!isLoading && jobs.length === 0 ? <p className={`px-4 py-4 text-sm ${secondaryTextClass}`}>No jobs yet.</p> : null}
           {!isLoading && jobs.length > 0 ? (
             <ul>
               {jobs.map(item => (
-                <li key={item.id} className="border-t border-slate-800 px-4 py-3 text-sm">
+                <li key={item.id} className={isDark ? 'border-t border-slate-800 px-4 py-3 text-sm' : 'border-t border-slate-200 px-4 py-3 text-sm'}>
                   <div className="grid gap-2 md:grid-cols-[1.6fr_1fr_1fr_1fr_1fr_auto] md:items-center">
                     <p className="truncate">{item.sourceFilename}</p>
-                    <p className="text-xs text-slate-300">{item.status}</p>
-                    <p className="text-xs text-slate-300">{item.duplicateStrategy}</p>
-                    <p className="text-xs text-slate-400">
+                    <p className={`text-xs ${secondaryTextClass}`}>{item.status}</p>
+                    <p className={`text-xs ${secondaryTextClass}`}>{item.duplicateStrategy}</p>
+                    <p className={`text-xs ${subtleTextClass}`}>
                       {item.successfulRows ?? 0}/{item.totalRows ?? 0}
                     </p>
-                    <p className="text-xs text-slate-400">Failed: {item.failedRows ?? 0}</p>
+                    <p className={`text-xs ${subtleTextClass}`}>Failed: {item.failedRows ?? 0}</p>
                     <button
                       type="button"
                       onClick={() => void loadErrors(item.id)}
-                      className="rounded-md border border-slate-700 px-3 py-1"
+                      className={isDark ? 'rounded-md border border-slate-700 px-3 py-1' : 'rounded-md border border-slate-300 px-3 py-1'}
                     >
                       View errors
                     </button>
@@ -429,16 +437,16 @@ export default function ImportsPage() {
           ) : null}
         </section>
 
-        <section className="rounded-xl border border-slate-800 bg-slate-900/60">
-          <div className="border-b border-slate-800 px-4 py-3 text-sm font-semibold">
+        <section className={cardClass}>
+          <div className={isDark ? 'border-b border-slate-800 px-4 py-3 text-sm font-semibold' : 'border-b border-slate-200 px-4 py-3 text-sm font-semibold'}>
             Import errors {selectedJobId ? `(job ${selectedJobId.slice(0, 8)})` : ''}
           </div>
           {errors.length === 0 ? (
-            <p className="px-4 py-4 text-sm text-slate-300">No errors loaded.</p>
+            <p className={`px-4 py-4 text-sm ${secondaryTextClass}`}>No errors loaded.</p>
           ) : (
             <ul>
               {errors.map(item => (
-                <li key={item.id} className="border-t border-slate-800 px-4 py-3 text-sm">
+                <li key={item.id} className={isDark ? 'border-t border-slate-800 px-4 py-3 text-sm' : 'border-t border-slate-200 px-4 py-3 text-sm'}>
                   Row {item.rowNumber}: {item.message}
                 </li>
               ))}

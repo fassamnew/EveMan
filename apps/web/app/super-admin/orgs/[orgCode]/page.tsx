@@ -4,7 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { loadSession, authFetch } from '../../../../lib/session';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 type OrgMember = {
   id: string;

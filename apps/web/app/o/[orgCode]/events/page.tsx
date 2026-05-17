@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { authFetch, loadSession } from '../../../../lib/session';
+import { useTheme } from '../../../../lib/theme-provider';
 
 type EventItem = {
   id: string;
@@ -27,7 +28,7 @@ type EventTemplate = {
   updatedAt: string;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Draft',
@@ -54,6 +55,7 @@ function toDatetimeLocal(iso: string | null): string {
 
 export default function OrgEventsPage() {
   const router = useRouter();
+  const { theme } = useTheme();
   const params = useParams<{ orgCode: string }>();
   const orgCode = typeof params.orgCode === 'string' ? params.orgCode : '';
 
@@ -84,6 +86,19 @@ export default function OrgEventsPage() {
   const [editStatus, setEditStatus] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  const isDark = theme === 'dark';
+  const pageClass = isDark
+    ? 'min-h-screen bg-slate-950 px-6 py-8 text-slate-100'
+    : 'min-h-screen bg-slate-50 px-6 py-8 text-slate-950';
+  const cardClass = isDark
+    ? 'rounded-2xl border border-slate-800 bg-slate-900/60'
+    : 'rounded-2xl border border-slate-200 bg-white';
+  const fieldClass = isDark
+    ? 'rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring'
+    : 'rounded-lg border border-slate-300 bg-white px-3 py-2 outline-none ring-blue-300 focus:ring';
+  const secondaryTextClass = isDark ? 'text-slate-300' : 'text-slate-700';
+  const subtleTextClass = isDark ? 'text-slate-400' : 'text-slate-600';
 
   const onSessionExpired = useCallback(() => router.replace(`/o/${orgCode}`), [orgCode, router]);
 
@@ -321,7 +336,7 @@ export default function OrgEventsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 px-6 py-8 text-slate-100">
+    <main className={pageClass}>
       <div className="mx-auto max-w-5xl">
         {/* Header */}
         <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -329,7 +344,7 @@ export default function OrgEventsPage() {
             <button
               type="button"
               onClick={() => router.push(`/o/${orgCode}`)}
-              className="mb-1 text-xs text-slate-400 hover:text-slate-200"
+              className={isDark ? 'mb-1 text-xs text-slate-400 hover:text-slate-200' : 'mb-1 text-xs text-slate-600 hover:text-slate-800'}
             >
               ← Back to portal
             </button>
@@ -345,19 +360,19 @@ export default function OrgEventsPage() {
         </header>
 
         {pageError && (
-          <p className="mb-4 rounded-lg border border-rose-500/40 bg-rose-950/40 px-4 py-3 text-sm text-rose-300">{pageError}</p>
+          <p className={isDark ? 'mb-4 rounded-lg border border-rose-500/40 bg-rose-950/40 px-4 py-3 text-sm text-rose-300' : 'mb-4 rounded-lg border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700'}>{pageError}</p>
         )}
 
-        <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+        <section className={`mb-6 p-5 ${cardClass}`}>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-base font-semibold text-cyan-200">Event Templates</h2>
-            <span className="text-xs text-slate-400">{templates.length} template{templates.length !== 1 ? 's' : ''}</span>
+            <h2 className={isDark ? 'text-base font-semibold text-cyan-200' : 'text-base font-semibold text-blue-700'}>Event Templates</h2>
+            <span className={`text-xs ${subtleTextClass}`}>{templates.length} template{templates.length !== 1 ? 's' : ''}</span>
           </div>
           <div className="grid gap-3 md:grid-cols-[1fr_auto]">
             <select
               value={selectedTemplateId}
               onChange={event => setSelectedTemplateId(event.target.value)}
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+              className={`${fieldClass} text-sm`}
             >
               <option value="">Select template</option>
               {templates.map(template => (
@@ -379,10 +394,10 @@ export default function OrgEventsPage() {
           {templates.length > 0 ? (
             <ul className="mt-3 space-y-2">
               {templates.map(template => (
-                <li key={template.id} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-xs">
+                <li key={template.id} className={isDark ? 'flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-xs' : 'flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs'}>
                   <div>
-                    <p className="font-medium text-slate-200">{template.name}</p>
-                    <p className="text-slate-400">Draft: {template.eventDraft.name}</p>
+                    <p className={isDark ? 'font-medium text-slate-200' : 'font-medium text-slate-800'}>{template.name}</p>
+                    <p className={subtleTextClass}>Draft: {template.eventDraft.name}</p>
                   </div>
                   <button
                     type="button"
@@ -399,55 +414,57 @@ export default function OrgEventsPage() {
 
         {/* Create form */}
         {showCreate && (
-          <form onSubmit={onCreate} className="mb-6 rounded-2xl border border-cyan-500/30 bg-slate-900/70 p-5">
-            <h2 className="mb-4 text-base font-semibold text-cyan-200">New event</h2>
+          <form onSubmit={onCreate} className={isDark ? 'mb-6 rounded-2xl border border-cyan-500/30 bg-slate-900/70 p-5' : 'mb-6 rounded-2xl border border-blue-300 bg-white p-5'}>
+            <h2 className={isDark ? 'mb-4 text-base font-semibold text-cyan-200' : 'mb-4 text-base font-semibold text-blue-700'}>New event</h2>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="col-span-full grid gap-1 text-sm">
-                <span className="text-slate-300">Event name <span className="text-rose-400">*</span></span>
+                <span className={secondaryTextClass}>Event name <span className="text-rose-400">*</span></span>
                 <input
                   value={createName}
                   onChange={e => setCreateName(e.target.value)}
                   required maxLength={160}
                   placeholder="e.g. Annual Tech Summit 2026"
-                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring"
+                  className={fieldClass}
                 />
               </label>
               <label className="col-span-full grid gap-1 text-sm">
-                <span className="text-slate-300">Description</span>
+                <span className={secondaryTextClass}>Description</span>
                 <textarea
                   value={createDesc}
                   onChange={e => setCreateDesc(e.target.value)}
                   maxLength={500} rows={3}
                   placeholder="Brief description of the event (optional)"
-                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring resize-none"
+                  className={`${fieldClass} resize-none`}
                 />
               </label>
               <label className="grid gap-1 text-sm">
-                <span className="text-slate-300">Start date &amp; time</span>
+                <span className={secondaryTextClass}>Start date &amp; time</span>
                 <input
                   type="datetime-local"
                   value={createStartsAt}
                   onChange={e => setCreateStartsAt(e.target.value)}
-                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring [color-scheme:dark]"
+                  className={fieldClass}
+                  style={{ colorScheme: theme }}
                 />
               </label>
               <label className="grid gap-1 text-sm">
-                <span className="text-slate-300">End date &amp; time</span>
+                <span className={secondaryTextClass}>End date &amp; time</span>
                 <input
                   type="datetime-local"
                   value={createEndsAt}
                   onChange={e => setCreateEndsAt(e.target.value)}
-                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring [color-scheme:dark]"
+                  className={fieldClass}
+                  style={{ colorScheme: theme }}
                 />
               </label>
             </div>
-            {createError && <p className="mt-3 text-sm text-rose-300">{createError}</p>}
+            {createError && <p className={isDark ? 'mt-3 text-sm text-rose-300' : 'mt-3 text-sm text-rose-600'}>{createError}</p>}
             <div className="mt-3 grid gap-2 md:grid-cols-[1fr_auto]">
               <input
                 value={templateName}
                 onChange={event => setTemplateName(event.target.value)}
                 placeholder="Template name to save this draft"
-                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-300 focus:ring"
+                className={`${fieldClass} text-sm`}
               />
               <button
                 type="button"
@@ -469,7 +486,7 @@ export default function OrgEventsPage() {
               <button
                 type="button"
                 onClick={() => setShowCreate(false)}
-                className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 transition"
+                className={isDark ? 'rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 transition' : 'rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 transition'}
               >
                 Cancel
               </button>
@@ -478,66 +495,66 @@ export default function OrgEventsPage() {
         )}
 
         {/* Events list */}
-        <section className="rounded-2xl border border-slate-800 bg-slate-900/60">
-          <div className="border-b border-slate-800 px-5 py-3 text-sm font-semibold text-slate-300">
+        <section className={cardClass}>
+          <div className={isDark ? 'border-b border-slate-800 px-5 py-3 text-sm font-semibold text-slate-300' : 'border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700'}>
             {events.length} event{events.length !== 1 ? 's' : ''}
           </div>
 
-          {isLoading && <p className="px-5 py-6 text-sm text-slate-400">Loading…</p>}
+          {isLoading && <p className={`px-5 py-6 text-sm ${subtleTextClass}`}>Loading…</p>}
           {!isLoading && events.length === 0 && (
-            <p className="px-5 py-6 text-sm text-slate-400">No events yet. Create one above.</p>
+            <p className={`px-5 py-6 text-sm ${subtleTextClass}`}>No events yet. Create one above.</p>
           )}
 
           <ul>
             {events.map(item => (
-              <li key={item.id} className="border-t border-slate-800">
+              <li key={item.id} className={isDark ? 'border-t border-slate-800' : 'border-t border-slate-200'}>
                 {editId === item.id ? (
                   /* ── Inline edit form ── */
-                  <form onSubmit={onSaveEdit} className="p-5 grid gap-4 sm:grid-cols-2 bg-slate-800/40">
+                  <form onSubmit={onSaveEdit} className={isDark ? 'p-5 grid gap-4 sm:grid-cols-2 bg-slate-800/40' : 'p-5 grid gap-4 sm:grid-cols-2 bg-slate-100/50'}>
                     <label className="col-span-full grid gap-1 text-sm">
-                      <span className="text-slate-300">Event name <span className="text-rose-400">*</span></span>
+                      <span className={secondaryTextClass}>Event name <span className="text-rose-400">*</span></span>
                       <input
                         value={editName}
                         onChange={e => setEditName(e.target.value)}
                         required maxLength={160}
-                        className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring"
+                        className={fieldClass}
                       />
                     </label>
                     <label className="col-span-full grid gap-1 text-sm">
-                      <span className="text-slate-300">Description</span>
+                      <span className={secondaryTextClass}>Description</span>
                       <textarea
                         value={editDesc}
                         onChange={e => setEditDesc(e.target.value)}
                         maxLength={500} rows={2}
-                        className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring resize-none"
+                        className={`${fieldClass} resize-none`}
                       />
                     </label>
                     <label className="grid gap-1 text-sm">
-                      <span className="text-slate-300">Start date &amp; time</span>
+                      <span className={secondaryTextClass}>Start date &amp; time</span>
                       <input type="datetime-local" value={editStartsAt} onChange={e => setEditStartsAt(e.target.value)}
-                        className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring [color-scheme:dark]" />
+                        className={fieldClass} style={{ colorScheme: theme }} />
                     </label>
                     <label className="grid gap-1 text-sm">
-                      <span className="text-slate-300">End date &amp; time</span>
+                      <span className={secondaryTextClass}>End date &amp; time</span>
                       <input type="datetime-local" value={editEndsAt} onChange={e => setEditEndsAt(e.target.value)}
-                        className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring [color-scheme:dark]" />
+                        className={fieldClass} style={{ colorScheme: theme }} />
                     </label>
                     <label className="grid gap-1 text-sm">
-                      <span className="text-slate-300">Status</span>
+                      <span className={secondaryTextClass}>Status</span>
                       <select value={editStatus} onChange={e => setEditStatus(e.target.value)}
-                        className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none ring-cyan-300 focus:ring">
+                        className={fieldClass}>
                         <option value="DRAFT">Draft</option>
                         <option value="PUBLISHED">Published</option>
                       </select>
                     </label>
-                    {editError && <p className="col-span-full text-sm text-rose-300">{editError}</p>}
+                    {editError && <p className={isDark ? 'col-span-full text-sm text-rose-300' : 'col-span-full text-sm text-rose-600'}>{editError}</p>}
                     <div className="col-span-full flex gap-2">
                       <button type="submit" disabled={isSaving}
                         className="rounded-lg bg-cyan-400 px-4 py-1.5 text-sm font-semibold text-slate-950 hover:bg-cyan-300 disabled:opacity-60 transition">
                         {isSaving ? 'Saving…' : 'Save changes'}
                       </button>
                       <button type="button" onClick={() => setEditId(null)}
-                        className="rounded-lg border border-slate-700 px-4 py-1.5 text-sm text-slate-300 hover:bg-slate-800 transition">
+                        className={isDark ? 'rounded-lg border border-slate-700 px-4 py-1.5 text-sm text-slate-300 hover:bg-slate-800 transition' : 'rounded-lg border border-slate-300 px-4 py-1.5 text-sm text-slate-700 hover:bg-slate-100 transition'}>
                         Cancel
                       </button>
                     </div>

@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 export default function ActivateInvitePage() {
   const router = useRouter();

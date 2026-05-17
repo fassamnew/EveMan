@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { loadSession } from '../../../../lib/session';
+import { useTheme } from '../../../../lib/theme-provider';
 
 type CommunicationTemplate = {
   id: string;
@@ -44,7 +45,7 @@ type CommunicationLog = {
   } | null;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 const MESSAGE_TYPE_OPTIONS: Array<{ value: NonNullable<CommunicationTemplate['messageType']>; label: string }> = [
   { value: 'REGISTRATION_CONFIRMATION', label: 'Registration confirmation' },
@@ -62,6 +63,7 @@ const MESSAGE_TYPE_OPTIONS: Array<{ value: NonNullable<CommunicationTemplate['me
 export default function CommunicationsPage() {
   const params = useParams<{ orgCode: string }>();
   const router = useRouter();
+  const { theme } = useTheme();
   const orgCode = params.orgCode;
 
   const [templates, setTemplates] = useState<CommunicationTemplate[]>([]);
@@ -79,6 +81,15 @@ export default function CommunicationsPage() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isDark = theme === 'dark';
+  const pageClass = isDark ? 'min-h-screen bg-slate-950 px-6 py-10 text-slate-100' : 'min-h-screen bg-slate-50 px-6 py-10 text-slate-950';
+  const cardClass = isDark ? 'rounded-xl border border-slate-800 bg-slate-900/60' : 'rounded-xl border border-slate-200 bg-white';
+  const fieldClass = isDark
+    ? 'rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100'
+    : 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-950';
+  const subtleTextClass = isDark ? 'text-slate-400' : 'text-slate-600';
+  const secondaryTextClass = isDark ? 'text-slate-300' : 'text-slate-700';
 
   function getSessionToken(): string | null {
     const session = loadSession();
@@ -248,33 +259,33 @@ export default function CommunicationsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100">
+    <main className={pageClass}>
       <div className="mx-auto max-w-7xl">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-3xl font-semibold tracking-tight">Communications</h1>
           <button
             type="button"
             onClick={() => router.push(`/o/${orgCode}`)}
-            className="rounded-lg border border-slate-700 px-3 py-1 text-sm"
+            className={isDark ? 'rounded-lg border border-slate-700 px-3 py-1 text-sm' : 'rounded-lg border border-slate-300 px-3 py-1 text-sm'}
           >
             Back to portal
           </button>
         </div>
 
-        {error ? <p className="mb-4 text-sm text-red-300">{error}</p> : null}
+        {error ? <p className={isDark ? 'mb-4 text-sm text-red-300' : 'mb-4 text-sm text-red-600'}>{error}</p> : null}
 
-        <form onSubmit={createTemplate} className="mb-6 grid gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4 md:grid-cols-[1fr_120px_1fr]">
+        <form onSubmit={createTemplate} className={`mb-6 grid gap-3 p-4 md:grid-cols-[1fr_120px_1fr] ${cardClass}`}>
           <input
             value={name}
             onChange={event => setName(event.target.value)}
             required
             placeholder="Template name"
-            className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+            className={fieldClass}
           />
           <select
             value={channel}
             onChange={event => setChannel(event.target.value as 'EMAIL' | 'SMS' | 'WHATSAPP')}
-            className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+            className={fieldClass}
           >
             <option value="EMAIL">EMAIL</option>
             <option value="SMS">SMS</option>
@@ -284,14 +295,14 @@ export default function CommunicationsPage() {
             value={subject}
             onChange={event => setSubject(event.target.value)}
             placeholder="Subject (optional for SMS)"
-            className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+            className={fieldClass}
           />
           <select
             value={messageType}
             onChange={event =>
               setMessageType(event.target.value as NonNullable<CommunicationTemplate['messageType']> | '')
             }
-            className="md:col-span-3 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+            className={`md:col-span-3 ${fieldClass}`}
           >
             <option value="">No predefined message type</option>
             {MESSAGE_TYPE_OPTIONS.map(option => (
@@ -304,30 +315,30 @@ export default function CommunicationsPage() {
             value={body}
             onChange={event => setBody(event.target.value)}
             rows={4}
-            className="md:col-span-3 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+            className={`md:col-span-3 ${fieldClass}`}
           />
           <button type="submit" className="rounded-lg bg-cyan-400 px-4 py-2 font-semibold text-slate-950 md:col-span-3">
             Create template
           </button>
         </form>
 
-        <section className="mb-6 rounded-xl border border-slate-800 bg-slate-900/60">
-          <div className="border-b border-slate-800 px-4 py-3 text-sm font-semibold">Templates</div>
-          {isLoading ? <p className="px-4 py-4 text-sm text-slate-300">Loading...</p> : null}
-          {!isLoading && templates.length === 0 ? <p className="px-4 py-4 text-sm text-slate-300">No templates yet.</p> : null}
+        <section className={`mb-6 ${cardClass}`}>
+          <div className={isDark ? 'border-b border-slate-800 px-4 py-3 text-sm font-semibold' : 'border-b border-slate-200 px-4 py-3 text-sm font-semibold'}>Templates</div>
+          {isLoading ? <p className={`px-4 py-4 text-sm ${secondaryTextClass}`}>Loading...</p> : null}
+          {!isLoading && templates.length === 0 ? <p className={`px-4 py-4 text-sm ${secondaryTextClass}`}>No templates yet.</p> : null}
           {!isLoading && templates.length > 0 ? (
             <ul>
               {templates.map(item => (
-                <li key={item.id} className="border-t border-slate-800 px-4 py-3 text-sm">
+                <li key={item.id} className={isDark ? 'border-t border-slate-800 px-4 py-3 text-sm' : 'border-t border-slate-200 px-4 py-3 text-sm'}>
                   <div className="grid gap-2 md:grid-cols-[1fr_120px_120px_1fr_auto] md:items-center">
                     <p className="font-medium">{item.name}</p>
-                    <p className="text-xs text-slate-300">{item.channel}</p>
-                    <p className="text-xs text-slate-300">{item.isActive ? 'ACTIVE' : 'INACTIVE'}</p>
-                    <p className="truncate text-xs text-slate-400">{item.messageType || item.subject || item.body}</p>
+                    <p className={`text-xs ${secondaryTextClass}`}>{item.channel}</p>
+                    <p className={`text-xs ${secondaryTextClass}`}>{item.isActive ? 'ACTIVE' : 'INACTIVE'}</p>
+                    <p className={`truncate text-xs ${subtleTextClass}`}>{item.messageType || item.subject || item.body}</p>
                     <button
                       type="button"
                       onClick={() => void updateTemplate(item.id)}
-                      className="rounded-md border border-slate-700 px-3 py-1"
+                      className={isDark ? 'rounded-md border border-slate-700 px-3 py-1' : 'rounded-md border border-slate-300 px-3 py-1'}
                     >
                       {item.isActive ? 'Disable' : 'Enable'}
                     </button>
@@ -338,12 +349,12 @@ export default function CommunicationsPage() {
           ) : null}
         </section>
 
-        <form onSubmit={queueBulkSend} className="mb-6 grid gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4 md:grid-cols-[1fr_2fr_auto]">
+        <form onSubmit={queueBulkSend} className={`mb-6 grid gap-3 p-4 md:grid-cols-[1fr_2fr_auto] ${cardClass}`}>
           <select
             value={bulkTemplateId}
             onChange={event => setBulkTemplateId(event.target.value)}
             required
-            className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+            className={fieldClass}
           >
             {templates.map(item => (
               <option key={item.id} value={item.id}>
@@ -355,13 +366,13 @@ export default function CommunicationsPage() {
             value={attendeeIdsText}
             onChange={event => setAttendeeIdsText(event.target.value)}
             placeholder="Optional attendee IDs (comma-separated)"
-            className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+            className={fieldClass}
           />
           <div className="flex items-center gap-2">
             <select
               value={sendMode}
               onChange={event => setSendMode(event.target.value as 'NOW' | 'SCHEDULED')}
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+              className={fieldClass}
             >
               <option value="NOW">Send now</option>
               <option value="SCHEDULED">Schedule</option>
@@ -372,7 +383,8 @@ export default function CommunicationsPage() {
                 value={scheduledAtLocal}
                 onChange={event => setScheduledAtLocal(event.target.value)}
                 required
-                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 [color-scheme:dark]"
+                className={fieldClass}
+                style={{ colorScheme: theme }}
               />
             ) : null}
           </div>
@@ -381,25 +393,25 @@ export default function CommunicationsPage() {
           </button>
         </form>
 
-        <section className="rounded-xl border border-slate-800 bg-slate-900/60">
-          <div className="border-b border-slate-800 px-4 py-3 text-sm font-semibold">Delivery logs (latest 200)</div>
-          {!isLoading && logs.length === 0 ? <p className="px-4 py-4 text-sm text-slate-300">No logs yet.</p> : null}
+        <section className={cardClass}>
+          <div className={isDark ? 'border-b border-slate-800 px-4 py-3 text-sm font-semibold' : 'border-b border-slate-200 px-4 py-3 text-sm font-semibold'}>Delivery logs (latest 200)</div>
+          {!isLoading && logs.length === 0 ? <p className={`px-4 py-4 text-sm ${secondaryTextClass}`}>No logs yet.</p> : null}
           {logs.length > 0 ? (
             <ul>
               {logs.map(item => (
-                <li key={item.id} className="border-t border-slate-800 px-4 py-3 text-sm">
+                <li key={item.id} className={isDark ? 'border-t border-slate-800 px-4 py-3 text-sm' : 'border-t border-slate-200 px-4 py-3 text-sm'}>
                   <div className="grid gap-2 md:grid-cols-[120px_100px_1fr_220px] md:items-center">
-                    <p className="text-xs text-slate-300">{item.channel}</p>
-                    <p className="text-xs text-slate-300">{item.status}</p>
+                    <p className={`text-xs ${secondaryTextClass}`}>{item.channel}</p>
+                    <p className={`text-xs ${secondaryTextClass}`}>{item.status}</p>
                     <p className="truncate">{item.recipientAddress}</p>
-                    <p className="text-xs text-slate-400">{new Date(item.createdAt).toLocaleString()}</p>
+                    <p className={`text-xs ${subtleTextClass}`}>{new Date(item.createdAt).toLocaleString()}</p>
                   </div>
                   {item.metadataJson?.scheduledFor ? (
                     <p className="mt-1 text-xs text-indigo-300">
                       Scheduled for: {new Date(item.metadataJson.scheduledFor).toLocaleString()}
                     </p>
                   ) : null}
-                  {item.template?.name ? <p className="mt-1 text-xs text-slate-400">Template: {item.template.name}</p> : null}
+                  {item.template?.name ? <p className={`mt-1 text-xs ${subtleTextClass}`}>Template: {item.template.name}</p> : null}
                   {item.errorMessage ? <p className="mt-1 text-xs text-rose-300">{item.errorMessage}</p> : null}
                 </li>
               ))}

@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { loadSession } from '../../../../../lib/session';
+import { useTheme } from '../../../../../lib/theme-provider';
 
 type BadgeTemplate = {
   id: string;
@@ -14,11 +15,12 @@ type BadgeTemplate = {
   updatedAt: string;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 export default function BadgeTemplatesPage() {
   const router = useRouter();
   const params = useParams<{ orgCode: string }>();
+  const { theme } = useTheme();
   const orgCode = params.orgCode;
 
   const [templates, setTemplates] = useState<BadgeTemplate[]>([]);
@@ -28,6 +30,19 @@ export default function BadgeTemplatesPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [metricsJson, setMetricsJson] = useState<string>('');
+
+  const isDark = theme === 'dark';
+  const pageClass = isDark
+    ? 'min-h-screen bg-slate-950 px-6 py-10 text-slate-100'
+    : 'min-h-screen bg-slate-50 px-6 py-10 text-slate-950';
+  const cardClass = isDark
+    ? 'rounded-xl border border-slate-800 bg-slate-900/60'
+    : 'rounded-xl border border-slate-200 bg-white';
+  const fieldClass = isDark
+    ? 'rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100'
+    : 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-950';
+  const subtleTextClass = isDark ? 'text-slate-400' : 'text-slate-600';
+  const secondaryTextClass = isDark ? 'text-slate-300' : 'text-slate-700';
 
   function parseConfigJson(raw: string): Record<string, unknown> {
     const parsed = JSON.parse(raw) as unknown;
@@ -190,30 +205,30 @@ export default function BadgeTemplatesPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100">
+    <main className={pageClass}>
       <div className="mx-auto max-w-6xl">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-3xl font-semibold tracking-tight">Badge Templates</h1>
           <button
             type="button"
             onClick={() => router.push(`/o/${orgCode}`)}
-            className="rounded-lg border border-slate-700 px-3 py-1 text-sm"
+            className={isDark ? 'rounded-lg border border-slate-700 px-3 py-1 text-sm' : 'rounded-lg border border-slate-300 px-3 py-1 text-sm'}
           >
             Back to portal
           </button>
         </div>
 
-        {error ? <p className="mb-4 text-sm text-red-300">{error}</p> : null}
+        {error ? <p className={isDark ? 'mb-4 text-sm text-red-300' : 'mb-4 text-sm text-red-600'}>{error}</p> : null}
 
-        <section className="mb-6 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-cyan-300">Create Template</h2>
+        <section className={`mb-6 p-4 ${cardClass}`}>
+          <h2 className={isDark ? 'mb-3 text-sm font-semibold uppercase tracking-wide text-cyan-300' : 'mb-3 text-sm font-semibold uppercase tracking-wide text-blue-700'}>Create Template</h2>
           <form onSubmit={onCreate} className="grid gap-3 md:grid-cols-[1.2fr_120px_2fr_auto]">
             <input
               value={name}
               onChange={event => setName(event.target.value)}
               placeholder="Template name"
               required
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+              className={fieldClass}
             />
             <input
               value={version}
@@ -221,13 +236,13 @@ export default function BadgeTemplatesPage() {
               type="number"
               min={1}
               required
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+              className={fieldClass}
             />
             <textarea
               value={configJsonText}
               onChange={event => setConfigJsonText(event.target.value)}
               rows={3}
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs"
+              className={`${fieldClass} font-mono text-xs`}
             />
             <button type="submit" className="rounded-lg bg-cyan-400 px-4 py-2 font-semibold text-slate-950">
               Create
@@ -235,41 +250,41 @@ export default function BadgeTemplatesPage() {
           </form>
         </section>
 
-        <section className="mb-6 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-emerald-300">Renderer Metrics</h2>
+        <section className={`mb-6 p-4 ${cardClass}`}>
+          <h2 className={isDark ? 'mb-3 text-sm font-semibold uppercase tracking-wide text-emerald-300' : 'mb-3 text-sm font-semibold uppercase tracking-wide text-emerald-700'}>Renderer Metrics</h2>
           {metricsJson ? (
-            <pre className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-200">
+            <pre className={isDark ? 'overflow-x-auto rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-200' : 'overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-800'}>
               {metricsJson}
             </pre>
           ) : (
-            <p className="text-sm text-slate-300">Metrics are unavailable.</p>
+            <p className={`text-sm ${secondaryTextClass}`}>Metrics are unavailable.</p>
           )}
         </section>
 
-        <section className="rounded-xl border border-slate-800 bg-slate-900/60">
-          <div className="border-b border-slate-800 px-4 py-3 text-sm font-semibold">Templates</div>
-          {isLoading ? <p className="px-4 py-4 text-sm text-slate-300">Loading...</p> : null}
+        <section className={cardClass}>
+          <div className={isDark ? 'border-b border-slate-800 px-4 py-3 text-sm font-semibold' : 'border-b border-slate-200 px-4 py-3 text-sm font-semibold'}>Templates</div>
+          {isLoading ? <p className={`px-4 py-4 text-sm ${secondaryTextClass}`}>Loading...</p> : null}
           {!isLoading && templates.length === 0 ? (
-            <p className="px-4 py-4 text-sm text-slate-300">No templates created yet.</p>
+            <p className={`px-4 py-4 text-sm ${secondaryTextClass}`}>No templates created yet.</p>
           ) : null}
           {!isLoading && templates.length > 0 ? (
             <ul>
               {templates.map(item => (
-                <li key={item.id} className="border-t border-slate-800 px-4 py-4 text-sm">
+                <li key={item.id} className={isDark ? 'border-t border-slate-800 px-4 py-4 text-sm' : 'border-t border-slate-200 px-4 py-4 text-sm'}>
                   <div className="grid gap-3 md:grid-cols-[1fr_120px_100px_1fr_auto_auto] md:items-start">
                     <input
                       id={`name-${item.id}`}
                       defaultValue={item.name}
-                      className="rounded border border-slate-700 bg-slate-950 px-2 py-1"
+                      className={isDark ? 'rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100' : 'rounded border border-slate-300 bg-white px-2 py-1 text-slate-950'}
                     />
                     <input
                       id={`version-${item.id}`}
                       type="number"
                       min={1}
                       defaultValue={item.version}
-                      className="rounded border border-slate-700 bg-slate-950 px-2 py-1"
+                      className={isDark ? 'rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100' : 'rounded border border-slate-300 bg-white px-2 py-1 text-slate-950'}
                     />
-                    <label className="mt-1 inline-flex items-center gap-2 text-xs text-slate-300">
+                    <label className={`mt-1 inline-flex items-center gap-2 text-xs ${secondaryTextClass}`}>
                       <input id={`active-${item.id}`} type="checkbox" defaultChecked={item.isActive} />
                       Active
                     </label>
@@ -277,7 +292,7 @@ export default function BadgeTemplatesPage() {
                       id={`config-${item.id}`}
                       defaultValue={JSON.stringify(item.configJson, null, 2)}
                       rows={4}
-                      className="rounded border border-slate-700 bg-slate-950 px-2 py-1 font-mono text-xs"
+                      className={isDark ? 'rounded border border-slate-700 bg-slate-950 px-2 py-1 font-mono text-xs text-slate-100' : 'rounded border border-slate-300 bg-white px-2 py-1 font-mono text-xs text-slate-950'}
                     />
                     <button
                       type="button"

@@ -28,7 +28,7 @@ type LinkPageSettings = {
   termsAndConditions?: string | null;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 const TEMPLATE_OPTIONS: Array<{ value: NonNullable<LinkPageSettings['pageTemplate']>; label: string }> = [
   { value: 'CONFERENCE', label: 'Conference template' },

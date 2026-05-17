@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { loadSession } from '../../../../lib/session';
+import { useTheme } from '../../../../lib/theme-provider';
 
 const LIVE_REFRESH_INTERVAL_MS = 10_000;
 
@@ -153,11 +154,12 @@ type DownloadLinkResponse = {
   contentType: string | null;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 export default function AnalyticsPage() {
   const params = useParams<{ orgCode: string }>();
   const router = useRouter();
+  const { theme } = useTheme();
   const orgCode = params.orgCode;
 
   const [data, setData] = useState<DashboardResponse | null>(null);
@@ -199,6 +201,22 @@ export default function AnalyticsPage() {
   const [scanMetrics, setScanMetrics] = useState<ScanMetricsResponse['metrics'] | null>(null);
   const [lastScanned, setLastScanned] = useState<LastScannedResponse['attendees']>([]);
   const [noShowAnalysis, setNoShowAnalysis] = useState<NoShowResponse['analysis'] | null>(null);
+
+  const isDark = theme === 'dark';
+  const pageClass = isDark
+    ? 'min-h-screen bg-slate-950 px-6 py-10 text-slate-100'
+    : 'min-h-screen bg-slate-50 px-6 py-10 text-slate-950';
+  const panelClass = isDark
+    ? 'rounded-xl border border-slate-800 bg-slate-900/60'
+    : 'rounded-xl border border-slate-200 bg-white';
+  const panelPaddedClass = `${panelClass} p-4`;
+  const panelHeaderClass = isDark ? 'border-b border-slate-800 px-4 py-3' : 'border-b border-slate-200 px-4 py-3';
+  const panelRowClass = isDark ? 'border-t border-slate-800 px-4 py-3 text-sm' : 'border-t border-slate-200 px-4 py-3 text-sm';
+  const fieldClass = isDark
+    ? 'rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100'
+    : 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950';
+  const subtleTextClass = isDark ? 'text-slate-400' : 'text-slate-600';
+  const secondaryTextClass = isDark ? 'text-slate-300' : 'text-slate-700';
 
   const hasExportRole = useMemo(() => {
     const session = loadSession();
@@ -566,7 +584,7 @@ export default function AnalyticsPage() {
   }, [data]);
 
   return (
-    <main className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100">
+    <main className={pageClass}>
       <div className="mx-auto max-w-7xl">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-3xl font-semibold tracking-tight">Analytics Dashboard</h1>
@@ -577,7 +595,9 @@ export default function AnalyticsPage() {
               className={`rounded-lg border px-3 py-1 text-sm ${
                 liveModeEnabled
                   ? 'border-emerald-500 text-emerald-200'
-                  : 'border-slate-700 text-slate-300'
+                  : isDark
+                  ? 'border-slate-700 text-slate-300'
+                  : 'border-slate-300 text-slate-700'
               }`}
             >
               {liveModeEnabled ? 'Live mode: on' : 'Live mode: off'}
@@ -592,19 +612,19 @@ export default function AnalyticsPage() {
             <button
               type="button"
               onClick={() => router.push(`/o/${orgCode}`)}
-              className="rounded-lg border border-slate-700 px-3 py-1 text-sm"
+              className={isDark ? 'rounded-lg border border-slate-700 px-3 py-1 text-sm' : 'rounded-lg border border-slate-300 px-3 py-1 text-sm'}
             >
               Back to portal
             </button>
           </div>
         </div>
 
-        {error ? <p className="mb-4 text-sm text-rose-300">{error}</p> : null}
-        {isLoading ? <p className="mb-4 text-sm text-slate-300">Loading dashboard...</p> : null}
+        {error ? <p className={isDark ? 'mb-4 text-sm text-rose-300' : 'mb-4 text-sm text-rose-600'}>{error}</p> : null}
+        {isLoading ? <p className={`mb-4 text-sm ${secondaryTextClass}`}>Loading dashboard...</p> : null}
 
         {data ? (
           <>
-            <p className="mb-4 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+            <p className={`mb-4 flex flex-wrap items-center gap-3 text-xs ${subtleTextClass}`}>
               <span>Generated: {new Date(data.generatedAt).toLocaleString()}</span>
               <span>Cached: {data.cached ? 'yes' : 'no'}</span>
               <span>
@@ -619,16 +639,18 @@ export default function AnalyticsPage() {
             </p>
 
             <section className="mb-6 grid gap-3 md:grid-cols-4">
-              <KpiCard label="Events" value={`${data.kpis.publishedEvents}/${data.kpis.totalEvents}`} delta={null} />
+              <KpiCard label="Events" value={`${data.kpis.publishedEvents}/${data.kpis.totalEvents}`} delta={null} isDark={isDark} />
               <KpiCard
                 label="Registrants"
                 value={`${data.kpis.totalRegistrants}`}
                 delta={kpiDeltas?.totalRegistrants ?? null}
+                isDark={isDark}
               />
               <KpiCard
                 label="Check-ins"
                 value={`${data.kpis.totalCheckins} (${data.kpis.checkinRate}%)`}
                 delta={kpiDeltas?.totalCheckins ?? null}
+                isDark={isDark}
               />
               <KpiCard
                 label="Communications"
@@ -638,6 +660,7 @@ export default function AnalyticsPage() {
                     ? kpiDeltas.communicationSent + kpiDeltas.communicationFailed
                     : null
                 }
+                isDark={isDark}
               />
             </section>
 
@@ -646,21 +669,24 @@ export default function AnalyticsPage() {
                 label="No-shows"
                 value={noShowAnalysis ? `${noShowAnalysis.noShowCount} (${noShowAnalysis.noShowRate}%)` : '-'}
                 delta={null}
+                isDark={isDark}
               />
               <KpiCard
                 label="Duplicate scans"
                 value={scanMetrics ? `${scanMetrics.duplicate}` : '-'}
                 delta={null}
+                isDark={isDark}
               />
               <KpiCard
                 label="Invalid scans"
                 value={scanMetrics ? `${scanMetrics.invalid}` : '-'}
                 delta={null}
+                isDark={isDark}
               />
             </section>
 
-            <section className="mb-6 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-300">
+            <section className={`mb-6 ${panelPaddedClass}`}>
+              <h2 className={`mb-3 text-sm font-semibold uppercase tracking-wide ${secondaryTextClass}`}>
                 7-day trend (registrations vs check-ins)
               </h2>
               <div className="grid gap-2 md:grid-cols-7">
@@ -669,29 +695,29 @@ export default function AnalyticsPage() {
                   const checkinsPct = Math.round((item.checkins / maxTrendValue) * 100);
 
                   return (
-                    <div key={item.day} className="rounded-lg border border-slate-800 bg-slate-950/60 p-2">
-                      <p className="text-[11px] text-slate-400">{item.day.slice(5)}</p>
+                    <div key={item.day} className={isDark ? 'rounded-lg border border-slate-800 bg-slate-950/60 p-2' : 'rounded-lg border border-slate-200 bg-slate-50 p-2'}>
+                      <p className={`text-[11px] ${subtleTextClass}`}>{item.day.slice(5)}</p>
                       <div className="mt-2 flex h-20 items-end gap-1">
                         <div className="w-1/2 rounded bg-cyan-400" style={{ height: `${registrationsPct}%` }} />
                         <div className="w-1/2 rounded bg-emerald-400" style={{ height: `${checkinsPct}%` }} />
                       </div>
-                      <p className="mt-2 text-[11px] text-slate-300">R {item.registrations} · C {item.checkins}</p>
+                      <p className={`mt-2 text-[11px] ${secondaryTextClass}`}>R {item.registrations} · C {item.checkins}</p>
                     </div>
                   );
                 })}
               </div>
             </section>
 
-            <section className="mb-6 rounded-xl border border-slate-800 bg-slate-900/60">
-              <div className="border-b border-slate-800 px-4 py-3">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Category breakdown</h2>
+            <section className={`mb-6 ${panelClass}`}>
+              <div className={panelHeaderClass}>
+                <h2 className={`text-sm font-semibold uppercase tracking-wide ${secondaryTextClass}`}>Category breakdown</h2>
               </div>
               {categoryBreakdown.length === 0 ? (
-                <p className="px-4 py-4 text-sm text-slate-300">No category data yet.</p>
+                <p className={`px-4 py-4 text-sm ${secondaryTextClass}`}>No category data yet.</p>
               ) : (
                 <ul>
                   {categoryBreakdown.map(item => (
-                    <li key={item.category} className="border-t border-slate-800 px-4 py-3 text-sm">
+                    <li key={item.category} className={panelRowClass}>
                       <div className="flex items-center justify-between">
                         <p>{item.category}</p>
                         <p className="text-cyan-300">{item.count}</p>
@@ -702,24 +728,24 @@ export default function AnalyticsPage() {
               )}
             </section>
 
-            <section className="mb-6 rounded-xl border border-slate-800 bg-slate-900/60">
-              <div className="border-b border-slate-800 px-4 py-3">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Registrations by link</h2>
+            <section className={`mb-6 ${panelClass}`}>
+              <div className={panelHeaderClass}>
+                <h2 className={`text-sm font-semibold uppercase tracking-wide ${secondaryTextClass}`}>Registrations by link</h2>
               </div>
               {linkBreakdown.length === 0 ? (
-                <p className="px-4 py-4 text-sm text-slate-300">No link data yet.</p>
+                <p className={`px-4 py-4 text-sm ${secondaryTextClass}`}>No link data yet.</p>
               ) : (
                 <ul>
                   {linkBreakdown.map(item => (
-                    <li key={item.linkId} className="border-t border-slate-800 px-4 py-3 text-sm">
+                    <li key={item.linkId} className={panelRowClass}>
                       <div className="grid gap-2 md:grid-cols-[1.5fr_1fr_1fr_1fr] md:items-center">
                         <div>
                           <p className="font-medium">{item.title}</p>
-                          <p className="text-xs text-slate-400">/{item.slug}</p>
+                          <p className={`text-xs ${subtleTextClass}`}>/{item.slug}</p>
                         </div>
-                        <p className="text-xs text-slate-300">Registrations: {item.registrations}</p>
-                        <p className="text-xs text-slate-300">Check-ins: {item.checkins}</p>
-                        <p className="text-xs text-slate-300">
+                        <p className={`text-xs ${secondaryTextClass}`}>Registrations: {item.registrations}</p>
+                        <p className={`text-xs ${secondaryTextClass}`}>Check-ins: {item.checkins}</p>
+                        <p className={`text-xs ${secondaryTextClass}`}>
                           Rate: {item.registrations > 0 ? Number(((item.checkins / item.registrations) * 100).toFixed(2)) : 0}%
                         </p>
                       </div>
@@ -729,16 +755,16 @@ export default function AnalyticsPage() {
               )}
             </section>
 
-            <section className="mb-6 rounded-xl border border-slate-800 bg-slate-900/60">
-              <div className="border-b border-slate-800 px-4 py-3">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Entrance scan metrics</h2>
+            <section className={`mb-6 ${panelClass}`}>
+              <div className={panelHeaderClass}>
+                <h2 className={`text-sm font-semibold uppercase tracking-wide ${secondaryTextClass}`}>Entrance scan metrics</h2>
               </div>
               {scanMetrics ? (
                 <div className="grid gap-3 px-4 py-4 md:grid-cols-2">
-                  <p className="text-sm text-slate-300">Accepted: {scanMetrics.accepted}</p>
-                  <p className="text-sm text-slate-300">Duplicate: {scanMetrics.duplicate}</p>
-                  <p className="text-sm text-slate-300">Invalid: {scanMetrics.invalid}</p>
-                  <p className="text-sm text-slate-300">Conflict: {scanMetrics.conflict}</p>
+                  <p className={`text-sm ${secondaryTextClass}`}>Accepted: {scanMetrics.accepted}</p>
+                  <p className={`text-sm ${secondaryTextClass}`}>Duplicate: {scanMetrics.duplicate}</p>
+                  <p className={`text-sm ${secondaryTextClass}`}>Invalid: {scanMetrics.invalid}</p>
+                  <p className={`text-sm ${secondaryTextClass}`}>Conflict: {scanMetrics.conflict}</p>
                   <div className="md:col-span-2">
                     <p className="mb-2 text-xs uppercase tracking-wide text-slate-400">By entrance</p>
                     <div className="flex flex-wrap gap-2">
@@ -1038,20 +1064,20 @@ export default function AnalyticsPage() {
   );
 }
 
-function KpiCard(props: { label: string; value: string; delta: number | null }) {
+function KpiCard(props: { label: string; value: string; delta: number | null; isDark: boolean }) {
   const showDelta = props.delta !== null && props.delta !== 0;
   const deltaLabel = props.delta && props.delta > 0 ? `+${props.delta}` : `${props.delta}`;
 
   return (
-    <article className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-      <p className="text-xs uppercase tracking-wide text-slate-400">{props.label}</p>
-      <p className="mt-2 text-xl font-semibold text-slate-100">{props.value}</p>
+    <article className={props.isDark ? 'rounded-xl border border-slate-800 bg-slate-900/60 p-4' : 'rounded-xl border border-slate-200 bg-white p-4'}>
+      <p className={props.isDark ? 'text-xs uppercase tracking-wide text-slate-400' : 'text-xs uppercase tracking-wide text-slate-600'}>{props.label}</p>
+      <p className={props.isDark ? 'mt-2 text-xl font-semibold text-slate-100' : 'mt-2 text-xl font-semibold text-slate-950'}>{props.value}</p>
       {showDelta ? (
         <p className={`mt-1 text-xs ${props.delta && props.delta > 0 ? 'text-emerald-300' : 'text-amber-300'}`}>
           {deltaLabel} since last refresh
         </p>
       ) : (
-        <p className="mt-1 text-xs text-slate-500">No change</p>
+        <p className={props.isDark ? 'mt-1 text-xs text-slate-500' : 'mt-1 text-xs text-slate-600'}>No change</p>
       )}
     </article>
   );

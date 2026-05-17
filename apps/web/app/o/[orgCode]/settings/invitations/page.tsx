@@ -25,7 +25,7 @@ type BulkInviteResponse = {
   results: BulkInviteResult[];
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 const CSV_TEMPLATE = 'email,roleName\nmember1@example.com,ORG_STAFF\nmanager@example.com,ORG_ADMIN';
 
 export default function BulkInvitationsPage() {

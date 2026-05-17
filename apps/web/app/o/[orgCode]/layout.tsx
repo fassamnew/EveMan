@@ -34,6 +34,13 @@ export default function OrgLayout({
   const isPublicOrgRoute =
     pathname === `/o/${orgCode}/login` || pathname === `/o/${orgCode}/activate`;
 
+  const handleSignOut = () => {
+    clearSession();
+    setIsAuthorized(false);
+    setAuthChecked(true);
+    router.replace(`/o/${orgCode}/login`);
+  };
+
   useEffect(() => {
     if (isPublicOrgRoute) {
       setAuthChecked(true);
@@ -138,10 +145,7 @@ export default function OrgLayout({
                 {email}
               </span>
               <button
-                onClick={() => {
-                  clearSession();
-                  router.push(`/o/${orgCode}`);
-                }}
+                onClick={handleSignOut}
                 className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
                   theme === 'dark'
                     ? 'border border-rose-500/60 text-rose-200 hover:bg-rose-500/10'
@@ -197,10 +201,7 @@ export default function OrgLayout({
               {email}
             </p>
             <button
-              onClick={() => {
-                clearSession();
-                router.push(`/o/${orgCode}`);
-              }}
+              onClick={handleSignOut}
               className={`w-full rounded-lg px-3 py-2 text-sm font-medium transition ${
                 theme === 'dark'
                   ? 'border border-rose-500/60 text-rose-200 hover:bg-rose-500/10'
@@ -226,7 +227,9 @@ export default function OrgLayout({
             theme === 'dark' ? 'bg-slate-950' : 'bg-white'
           }`}
         >
-          {children}
+          <div className={`org-theme-scope ${theme === 'light' ? 'org-theme-light' : 'org-theme-dark'}`}>
+            {children}
+          </div>
         </main>
       </div>
     </div>

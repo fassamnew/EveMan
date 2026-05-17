@@ -9,6 +9,13 @@ import { PolicyService } from '../common/policy.service';
 import type { RequestWithAuth } from '../common/request-with-auth';
 import type { CreateImportJobDto } from './dto/create-import-job.dto';
 
+type CreateImportJobInput = {
+  orgCode: string;
+  dto: CreateImportJobDto;
+  req: RequestWithAuth;
+  fileBuffer?: Buffer;
+};
+
 @Injectable()
 export class ImportsService {
   constructor(
@@ -29,6 +36,18 @@ export class ImportsService {
     }
   }
 
+  private resolveFileBuffer(input: { dto: CreateImportJobDto; fileBuffer?: Buffer }): Buffer | null {
+    if (input.fileBuffer && input.fileBuffer.byteLength > 0) {
+      return input.fileBuffer;
+    }
+
+    if (input.dto.fileContentBase64) {
+      return this.decodeFileContent(input.dto.fileContentBase64);
+    }
+
+    return null;
+  }
+
   private scanForMalware(buffer: Buffer): void {
     const body = buffer.toString('utf8');
     // Baseline hook: this can be replaced by external AV scanning integration in production.
@@ -37,15 +56,15 @@ export class ImportsService {
     }
   }
 
-  private parseRowsFromFile(dto: CreateImportJobDto): Array<{ data: Record<string, unknown> }> {
-    if (!dto.fileContentBase64) {
+  private parseRowsFromFile(input: { dto: CreateImportJobDto; fileBuffer?: Buffer }): Array<{ data: Record<string, unknown> }> {
+    const buffer = this.resolveFileBuffer(input);
+    if (!buffer) {
       return [];
     }
 
-    const buffer = this.decodeFileContent(dto.fileContentBase64);
     this.scanForMalware(buffer);
 
-    if (dto.sourceFileType === 'CSV') {
+    if (input.dto.sourceFileType === 'CSV') {
       const records = parseCsv(buffer, {
         columns: true,
         skip_empty_lines: true,
@@ -55,7 +74,7 @@ export class ImportsService {
       return records.map(item => ({ data: item }));
     }
 
-    if (dto.sourceFileType === 'XLSX') {
+    if (input.dto.sourceFileType === 'XLSX') {
       const workbook = readXlsx(buffer, { type: 'buffer' });
       const sheetName = workbook.SheetNames[0];
       if (!sheetName) {
@@ -79,12 +98,12 @@ export class ImportsService {
       return dto.rows as Array<{ data: Record<string, unknown> }>;
     }
 
-    const fileRows = this.parseRowsFromFile(dto);
+    const fileRows = this.parseRowsFromFile({ dto });
     if (fileRows.length > 0) {
       return fileRows;
     }
 
-    throw new BadRequestException('Provide either rows or fileContentBase64 with parsable CSV data');
+    throw new BadRequestException('Provide either rows, fileContentBase64, or an uploaded file with parsable CSV/XLSX data');
   }
 
   private validateMapping(rows: Array<{ data: Record<string, unknown> }>, dto: CreateImportJobDto): void {
@@ -131,10 +150,12 @@ export class ImportsService {
     return org;
   }
 
-  async createJob(input: { orgCode: string; dto: CreateImportJobDto; req: RequestWithAuth }) {
+  async createJob(input: CreateImportJobInput) {
     this.assertWriteAccess(input.orgCode, input.req);
     const org = await this.getOrg(input.orgCode);
-    const rows = this.resolveRows(input.dto);
+    const rows = input.fileBuffer || input.dto.fileContentBase64
+      ? this.parseRowsFromFile({ dto: input.dto, fileBuffer: input.fileBuffer })
+      : this.resolveRows(input.dto);
     this.validateMapping(rows, input.dto);
 
     const job = await this.prisma.importJob.create({

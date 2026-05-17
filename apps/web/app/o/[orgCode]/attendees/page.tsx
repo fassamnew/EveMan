@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { loadSession } from '../../../../lib/session';
+import { useTheme } from '../../../../lib/theme-provider';
 
 type AttendeeStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 
@@ -54,11 +55,12 @@ type AttendeeCommunicationResponse = {
   };
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 export default function AttendeesPage() {
   const params = useParams<{ orgCode: string }>();
   const router = useRouter();
+  const { theme } = useTheme();
   const orgCode = params.orgCode;
 
   const [search, setSearch] = useState('');
@@ -77,6 +79,19 @@ export default function AttendeesPage() {
   const [historyFilterById, setHistoryFilterById] = useState<Record<string, 'ALL' | 'QUEUED' | 'SENT' | 'FAILED'>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isDark = theme === 'dark';
+  const pageClass = isDark
+    ? 'min-h-screen bg-slate-950 px-6 py-10 text-slate-100'
+    : 'min-h-screen bg-slate-50 px-6 py-10 text-slate-950';
+  const cardClass = isDark
+    ? 'rounded-xl border border-slate-800 bg-slate-900/60'
+    : 'rounded-xl border border-slate-200 bg-white';
+  const inputClass = isDark
+    ? 'rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100'
+    : 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-950';
+  const subtleTextClass = isDark ? 'text-slate-400' : 'text-slate-600';
+  const secondaryTextClass = isDark ? 'text-slate-300' : 'text-slate-700';
 
   function getSessionToken(): string | null {
     const session = loadSession();
@@ -255,30 +270,30 @@ export default function AttendeesPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100">
+    <main className={pageClass}>
       <div className="mx-auto max-w-7xl">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-3xl font-semibold tracking-tight">Attendee Operations</h1>
           <button
             type="button"
             onClick={() => router.push(`/o/${orgCode}`)}
-            className="rounded-lg border border-slate-700 px-3 py-1 text-sm"
+            className={isDark ? 'rounded-lg border border-slate-700 px-3 py-1 text-sm' : 'rounded-lg border border-slate-300 px-3 py-1 text-sm'}
           >
             Back to portal
           </button>
         </div>
 
-        <form onSubmit={onSearch} className="mb-6 grid gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4 md:grid-cols-[1fr_180px_auto]">
+        <form onSubmit={onSearch} className={`mb-6 grid gap-3 p-4 md:grid-cols-[1fr_180px_auto] ${cardClass}`}>
           <input
             value={search}
             onChange={event => setSearch(event.target.value)}
             placeholder="Search by name, email, or reference"
-            className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+            className={inputClass}
           />
           <select
             value={status}
             onChange={event => setStatus(event.target.value as 'ALL' | AttendeeStatus)}
-            className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+            className={inputClass}
           >
             <option value="ALL">All statuses</option>
             <option value="PENDING">PENDING</option>
@@ -290,22 +305,22 @@ export default function AttendeesPage() {
           </button>
         </form>
 
-        {error ? <p className="mb-4 text-sm text-red-300">{error}</p> : null}
+        {error ? <p className={isDark ? 'mb-4 text-sm text-red-300' : 'mb-4 text-sm text-red-600'}>{error}</p> : null}
 
-        <section className="rounded-xl border border-slate-800 bg-slate-900/60">
-          <div className="border-b border-slate-800 px-4 py-3 text-sm font-semibold">
+        <section className={cardClass}>
+          <div className={isDark ? 'border-b border-slate-800 px-4 py-3 text-sm font-semibold' : 'border-b border-slate-200 px-4 py-3 text-sm font-semibold'}>
             Attendees ({pagination.total})
           </div>
 
-          {isLoading ? <p className="px-4 py-4 text-sm text-slate-300">Loading...</p> : null}
+          {isLoading ? <p className={`px-4 py-4 text-sm ${secondaryTextClass}`}>Loading...</p> : null}
           {!isLoading && attendees.length === 0 ? (
-            <p className="px-4 py-4 text-sm text-slate-300">No attendees found.</p>
+            <p className={`px-4 py-4 text-sm ${secondaryTextClass}`}>No attendees found.</p>
           ) : null}
 
           {!isLoading && attendees.length > 0 ? (
             <ul>
               {attendees.map(item => (
-                <li key={item.id} className="border-t border-slate-800 px-4 py-4 text-sm">
+                <li key={item.id} className={isDark ? 'border-t border-slate-800 px-4 py-4 text-sm' : 'border-t border-slate-200 px-4 py-4 text-sm'}>
                   <div className="grid gap-3 md:grid-cols-[1.2fr_1.2fr_120px_180px_auto_auto_auto_auto] md:items-center">
                     <input
                       value={editById[item.id]?.fullName || ''}
@@ -318,7 +333,7 @@ export default function AttendeesPage() {
                           }
                         }))
                       }
-                      className="rounded border border-slate-700 bg-slate-950 px-2 py-1"
+                      className={isDark ? 'rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100' : 'rounded border border-slate-300 bg-white px-2 py-1 text-slate-950'}
                     />
                     <input
                       value={editById[item.id]?.email || ''}
@@ -331,10 +346,10 @@ export default function AttendeesPage() {
                           }
                         }))
                       }
-                      className="rounded border border-slate-700 bg-slate-950 px-2 py-1"
+                      className={isDark ? 'rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100' : 'rounded border border-slate-300 bg-white px-2 py-1 text-slate-950'}
                     />
-                    <p className="text-xs text-slate-300">{item.lifecycleStatus}</p>
-                    <p className="text-xs text-slate-400">{item.referenceCode}</p>
+                    <p className={`text-xs ${secondaryTextClass}`}>{item.lifecycleStatus}</p>
+                    <p className={`text-xs ${subtleTextClass}`}>{item.referenceCode}</p>
                     <button
                       type="button"
                       onClick={() => void updateAttendee(item.id)}
@@ -371,14 +386,14 @@ export default function AttendeesPage() {
                       {openHistoryById[item.id] ? 'Hide history' : 'View history'}
                     </button>
                   </div>
-                  <p className="mt-2 text-xs text-slate-500">
+                  <p className={`mt-2 text-xs ${isDark ? 'text-slate-500' : 'text-slate-600'}`}>
                     Latest badge: {item.latestBadge ? `${item.latestBadge.id} (${item.latestBadge.status})` : 'none'}
                   </p>
 
                   {openHistoryById[item.id] ? (
-                    <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                    <div className={isDark ? 'mt-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3' : 'mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3'}>
                       <div className="mb-2 flex items-center justify-between gap-2">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-300">
+                        <p className={`text-xs font-semibold uppercase tracking-wide ${secondaryTextClass}`}>
                           Communication history
                         </p>
                         <select
@@ -388,7 +403,7 @@ export default function AttendeesPage() {
                             setHistoryFilterById(current => ({ ...current, [item.id]: next }));
                             void loadCommunicationHistory(item.id, next);
                           }}
-                          className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
+                          className={isDark ? 'rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs' : 'rounded border border-slate-300 bg-white px-2 py-1 text-xs'}
                         >
                           <option value="ALL">All statuses</option>
                           <option value="QUEUED">QUEUED</option>
@@ -398,21 +413,21 @@ export default function AttendeesPage() {
                       </div>
 
                       {historyLoadingById[item.id] ? (
-                        <p className="text-xs text-slate-400">Loading history...</p>
+                        <p className={`text-xs ${subtleTextClass}`}>Loading history...</p>
                       ) : (historyById[item.id] || []).length === 0 ? (
-                        <p className="text-xs text-slate-400">No communication logs found.</p>
+                        <p className={`text-xs ${subtleTextClass}`}>No communication logs found.</p>
                       ) : (
                         <ul className="space-y-2">
                           {(historyById[item.id] || []).map(log => (
-                            <li key={log.id} className="rounded border border-slate-800 bg-slate-900/60 p-2 text-xs">
+                            <li key={log.id} className={isDark ? 'rounded border border-slate-800 bg-slate-900/60 p-2 text-xs' : 'rounded border border-slate-200 bg-white p-2 text-xs'}>
                               <div className="flex flex-wrap items-center gap-2">
-                                <span className="font-medium text-slate-200">{log.channel}</span>
-                                <span className="text-slate-300">{log.status}</span>
-                                <span className="text-slate-500">{new Date(log.createdAt).toLocaleString()}</span>
+                                <span className={isDark ? 'font-medium text-slate-200' : 'font-medium text-slate-800'}>{log.channel}</span>
+                                <span className={secondaryTextClass}>{log.status}</span>
+                                <span className={isDark ? 'text-slate-500' : 'text-slate-600'}>{new Date(log.createdAt).toLocaleString()}</span>
                               </div>
-                              <p className="mt-1 text-slate-300">Recipient: {log.recipientAddress}</p>
-                              {log.template ? <p className="text-slate-400">Template: {log.template.name}</p> : null}
-                              {log.errorMessage ? <p className="text-rose-300">Error: {log.errorMessage}</p> : null}
+                              <p className={`mt-1 ${secondaryTextClass}`}>Recipient: {log.recipientAddress}</p>
+                              {log.template ? <p className={subtleTextClass}>Template: {log.template.name}</p> : null}
+                              {log.errorMessage ? <p className={isDark ? 'text-rose-300' : 'text-rose-600'}>Error: {log.errorMessage}</p> : null}
                             </li>
                           ))}
                         </ul>
@@ -430,18 +445,18 @@ export default function AttendeesPage() {
             type="button"
             disabled={pagination.page <= 1}
             onClick={() => void fetchAttendees(pagination.page - 1)}
-            className="rounded-md border border-slate-700 px-3 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+            className={isDark ? 'rounded-md border border-slate-700 px-3 py-1 disabled:cursor-not-allowed disabled:opacity-40' : 'rounded-md border border-slate-300 px-3 py-1 disabled:cursor-not-allowed disabled:opacity-40'}
           >
             Previous
           </button>
-          <p className="text-slate-300">
+          <p className={secondaryTextClass}>
             Page {pagination.page} of {pagination.totalPages}
           </p>
           <button
             type="button"
             disabled={pagination.page >= pagination.totalPages}
             onClick={() => void fetchAttendees(pagination.page + 1)}
-            className="rounded-md border border-slate-700 px-3 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+            className={isDark ? 'rounded-md border border-slate-700 px-3 py-1 disabled:cursor-not-allowed disabled:opacity-40' : 'rounded-md border border-slate-300 px-3 py-1 disabled:cursor-not-allowed disabled:opacity-40'}
           >
             Next
           </button>

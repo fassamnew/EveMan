@@ -42,7 +42,7 @@ type BadgeDesignPreset = {
   values: Partial<Pick<BadgeDesign, 'layout' | 'badgeSize' | 'orientation' | 'backgroundColor' | 'accentColor' | 'textColor' | 'showQrPlaceholder' | 'showPhotoPlaceholder' | 'showCategoryLabel' | 'showAccessZoneIndicator'>>;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 const DEFAULT_DESIGN: BadgeDesign = {
   layout: 'classic',
