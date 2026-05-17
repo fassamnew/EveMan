@@ -268,6 +268,18 @@ export class RegistrationsService {
     }
   }
 
+  private toMetadataString(value: unknown): string | null {
+    if (typeof value === 'string') {
+      return value;
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+
+    return null;
+  }
+
   private async getLinkAccessSettings(linkId: string): Promise<LinkAccessSettings> {
     const rows = await this.prisma.migrationMetadata.findMany({
       where: {
@@ -277,7 +289,7 @@ export class RegistrationsService {
       }
     });
 
-    const valueByKey = new Map(rows.map(row => [row.key.replace(this.linkSettingsPrefix(linkId), ''), row.value]));
+    const valueByKey = new Map<string, unknown>(rows.map(row => [row.key.replace(this.linkSettingsPrefix(linkId), ''), row.value]));
     const accessModeRaw = valueByKey.get('accessMode');
     const photoUploadRaw = valueByKey.get('photoUpload');
     const pageTemplateRaw = valueByKey.get('pageTemplate');
@@ -305,27 +317,27 @@ export class RegistrationsService {
 
     return {
       accessMode,
-      accessPassword: valueByKey.get('accessPassword') || null,
+      accessPassword: this.toMetadataString(valueByKey.get('accessPassword')),
       photoUpload,
-      confirmationMessage: valueByKey.get('confirmationMessage') || null,
-      emailTemplateName: valueByKey.get('emailTemplateName') || null,
-      registrationInstructions: valueByKey.get('registrationInstructions') || null,
+      confirmationMessage: this.toMetadataString(valueByKey.get('confirmationMessage')),
+      emailTemplateName: this.toMetadataString(valueByKey.get('emailTemplateName')),
+      registrationInstructions: this.toMetadataString(valueByKey.get('registrationInstructions')),
       allowRegistrantUpdate: valueByKey.get('allowRegistrantUpdate') === '1',
       smsDeliveryEnabled: valueByKey.get('smsDeliveryEnabled') === '1',
-      smsTemplateName: valueByKey.get('smsTemplateName') || null,
-      smsRecipientFieldKey: valueByKey.get('smsRecipientFieldKey') || null,
+      smsTemplateName: this.toMetadataString(valueByKey.get('smsTemplateName')),
+      smsRecipientFieldKey: this.toMetadataString(valueByKey.get('smsRecipientFieldKey')),
       pageTemplate,
-      pageLogoUrl: valueByKey.get('pageLogoUrl') || null,
-      pageBannerImageUrl: valueByKey.get('pageBannerImageUrl') || null,
-      pageBackgroundColor: valueByKey.get('pageBackgroundColor') || null,
-      pageButtonColor: valueByKey.get('pageButtonColor') || null,
-      pageFontFamily: valueByKey.get('pageFontFamily') || null,
-      pageEventDescription: valueByKey.get('pageEventDescription') || null,
-      sponsorLogoUrls: this.parseMetadataStringArray(valueByKey.get('sponsorLogoUrls')),
+      pageLogoUrl: this.toMetadataString(valueByKey.get('pageLogoUrl')),
+      pageBannerImageUrl: this.toMetadataString(valueByKey.get('pageBannerImageUrl')),
+      pageBackgroundColor: this.toMetadataString(valueByKey.get('pageBackgroundColor')),
+      pageButtonColor: this.toMetadataString(valueByKey.get('pageButtonColor')),
+      pageFontFamily: this.toMetadataString(valueByKey.get('pageFontFamily')),
+      pageEventDescription: this.toMetadataString(valueByKey.get('pageEventDescription')),
+      sponsorLogoUrls: this.parseMetadataStringArray(this.toMetadataString(valueByKey.get('sponsorLogoUrls')) || undefined),
       formLayout,
-      footerText: valueByKey.get('footerText') || null,
-      privacyNotice: valueByKey.get('privacyNotice') || null,
-      termsAndConditions: valueByKey.get('termsAndConditions') || null
+      footerText: this.toMetadataString(valueByKey.get('footerText')),
+      privacyNotice: this.toMetadataString(valueByKey.get('privacyNotice')),
+      termsAndConditions: this.toMetadataString(valueByKey.get('termsAndConditions'))
     };
   }
 
@@ -1288,7 +1300,7 @@ export class RegistrationsService {
     }
 
     const existingPhotoUrl =
-      registrant.responses.find(response => response.fieldKey === '__photo_upload__')?.valueText || undefined;
+      registrant.responses.find((response: { fieldKey: string; valueText: string }) => response.fieldKey === '__photo_upload__')?.valueText || undefined;
     const effectivePhotoUrl = dto.photoUrl === undefined ? existingPhotoUrl : dto.photoUrl;
     const normalizedPhotoUrl = this.assertPhotoUploadPolicy({
       settings: accessSettings,

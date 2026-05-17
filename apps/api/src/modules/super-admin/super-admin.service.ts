@@ -1,5 +1,4 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { AuditOutcome } from '@prisma/client';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -125,7 +124,7 @@ export class SuperAdminService {
       action: 'ORG_UPDATE',
       targetType: 'ORGANIZATION',
       targetId: updated.id,
-      outcome: AuditOutcome.SUCCESS,
+      outcome: 'SUCCESS',
       ipAddress: this.getClientIp(req),
       metadataJson: {
         previousCode: org.code,
@@ -178,7 +177,7 @@ export class SuperAdminService {
       action: 'USER_STATUS_UPDATE',
       targetType: 'USER',
       targetId: userId,
-      outcome: AuditOutcome.SUCCESS,
+      outcome: 'SUCCESS',
       ipAddress: this.getClientIp(req),
       metadataJson: {
         email: user.email,
@@ -308,7 +307,7 @@ export class SuperAdminService {
       action: 'OPS_BACKUP_RESTORE_DRILL_TRIGGERED',
       targetType: 'OPERATION',
       targetId: null,
-      outcome: AuditOutcome.SUCCESS,
+      outcome: 'SUCCESS',
       ipAddress: this.getClientIp(req),
       metadataJson: {
         scriptPath: resolved.scriptPath,

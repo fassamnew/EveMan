@@ -1,5 +1,4 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
-import { AuditOutcome, CheckinSource, Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { PrismaService } from '../../infra/db/prisma.service';
@@ -18,6 +17,8 @@ type QrPayload = {
   iat: number;
   exp: number;
 };
+
+type CheckinSourceValue = 'MOBILE_ONLINE' | 'OFFLINE_SYNC' | 'MANUAL';
 
 @Injectable()
 export class UsherService {
@@ -229,13 +230,13 @@ export class UsherService {
         action: 'USHER_CHECKIN_INVALID',
         targetType: 'CHECKIN',
         targetId: null,
-        outcome: AuditOutcome.FAILURE,
+        outcome: 'FAILURE',
         ipAddress: this.getIp(input.req),
         metadataJson: {
           reason,
           idempotencyKey: input.dto.idempotencyKey,
           ...(metadata || {})
-        } as Prisma.InputJsonValue
+        }
       });
     };
 
@@ -424,13 +425,13 @@ export class UsherService {
         action: 'USHER_CHECKIN_DUPLICATE',
         targetType: 'REGISTRANT',
         targetId: qr.registrant.id,
-        outcome: AuditOutcome.FAILURE,
+        outcome: 'FAILURE',
         ipAddress: this.getIp(input.req),
         metadataJson: {
           eventId: qr.registrant.eventId,
           duplicateCheckinId: duplicate.id,
           idempotencyKey: input.dto.idempotencyKey
-        } as Prisma.InputJsonValue
+        }
       });
 
       return {
@@ -456,7 +457,8 @@ export class UsherService {
       throw new BadRequestException('Invalid scannedAt timestamp');
     }
 
-    const persistedSource = input.dto.source === 'MOBILE_OFFLINE' ? 'OFFLINE_SYNC' : input.dto.source;
+    const persistedSource: CheckinSourceValue =
+      input.dto.source === 'MOBILE_OFFLINE' ? 'OFFLINE_SYNC' : (input.dto.source || 'MOBILE_ONLINE');
 
     const created = await this.prisma.checkin.create({
       data: {
@@ -466,7 +468,7 @@ export class UsherService {
         usherUserId: auth.userId,
         deviceId: input.dto.deviceId,
         idempotencyKey: input.dto.idempotencyKey,
-        source: (persistedSource || 'MOBILE_ONLINE') as CheckinSource,
+        source: persistedSource,
         syncState: 'ACCEPTED',
         entrance: input.dto.entrance || null,
         scannedAt
@@ -479,14 +481,14 @@ export class UsherService {
       action: 'USHER_CHECKIN_ACCEPTED',
       targetType: 'REGISTRANT',
       targetId: qr.registrant.id,
-      outcome: AuditOutcome.SUCCESS,
+      outcome: 'SUCCESS',
       ipAddress: this.getIp(input.req),
       metadataJson: {
         checkinId: created.id,
         eventId: qr.registrant.eventId,
         source: created.source,
         deviceId: created.deviceId
-      } as Prisma.InputJsonValue
+      }
     });
 
     return {

@@ -3,7 +3,7 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import type { INestApplication } from '@nestjs/common';
-import { CommunicationChannel, RoleName } from '@prisma/client';
+import { RoleName } from '@prisma/client';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../infra/db/prisma.service';
 import { PasswordService } from '../common/password.service';
@@ -204,7 +204,7 @@ describe.skipIf(!runIntegration)('Section 4 compliance integration (MySQL)', () 
       data: {
         organizationId: org.id,
         name: 'section4-template',
-        channel: CommunicationChannel.EMAIL,
+        channel: 'EMAIL',
         subject: 'Section4 Subject',
         body: 'Hello {{fullName}}',
         isActive: true
