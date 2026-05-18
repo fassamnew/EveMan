@@ -12,3 +12,5 @@ uploads/
 *.tsbuildinfo
 pnpm-lock.yaml
 yarn.lock
+.vercel
+.env*.local
